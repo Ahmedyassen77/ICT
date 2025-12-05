@@ -419,6 +419,229 @@ async def screenshot_mt5(api_key: str = Depends(verify_api_key)):
         return {"success": False, "error": str(e)}
 
 
+# =================================================================================
+#                          🎮 التحكم الكامل في النظام
+# =================================================================================
+
+@app.post("/cmd")
+async def run_command(command: str, api_key: str = Depends(verify_api_key)):
+    """
+    💻 تنفيذ أمر CMD
+    
+    مثال: git pull, dir, taskkill, etc.
+    """
+    try:
+        result = subprocess.run(
+            command,
+            shell=True,
+            capture_output=True,
+            text=True,
+            timeout=60,
+            cwd=r"C:\Users\a\ICT\mt5_middleware"
+        )
+        return {
+            "success": result.returncode == 0,
+            "command": command,
+            "stdout": result.stdout,
+            "stderr": result.stderr,
+            "return_code": result.returncode
+        }
+    except subprocess.TimeoutExpired:
+        return {"success": False, "error": "Command timed out"}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@app.post("/git-pull")
+async def git_pull(api_key: str = Depends(verify_api_key)):
+    """
+    📥 تحديث المشروع من GitHub
+    """
+    try:
+        result = subprocess.run(
+            "git pull origin main",
+            shell=True,
+            capture_output=True,
+            text=True,
+            timeout=60,
+            cwd=r"C:\Users\a\ICT"
+        )
+        return {
+            "success": result.returncode == 0,
+            "output": result.stdout,
+            "error": result.stderr
+        }
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@app.post("/close-mt5")
+async def close_mt5(api_key: str = Depends(verify_api_key)):
+    """
+    ❌ إغلاق MT5
+    """
+    try:
+        # طريقة 1: عبر MT5 API
+        if MT5_AVAILABLE:
+            try:
+                import MetaTrader5 as mt5
+                mt5.shutdown()
+            except:
+                pass
+        
+        # طريقة 2: عبر taskkill
+        result = subprocess.run(
+            'taskkill /IM terminal64.exe /F',
+            shell=True,
+            capture_output=True,
+            text=True
+        )
+        
+        return {
+            "success": True,
+            "message": "تم إغلاق MT5",
+            "output": result.stdout
+        }
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@app.post("/open-mt5")
+async def open_mt5(api_key: str = Depends(verify_api_key)):
+    """
+    🚀 فتح MT5
+    """
+    try:
+        if controller.terminal_path:
+            subprocess.Popen([controller.terminal_path])
+            time.sleep(3)
+            return {"success": True, "message": "تم فتح MT5"}
+        else:
+            return {"success": False, "error": "مسار MT5 غير موجود"}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@app.post("/restart-mt5")
+async def restart_mt5(api_key: str = Depends(verify_api_key)):
+    """
+    🔄 إعادة تشغيل MT5
+    """
+    try:
+        # إغلاق
+        subprocess.run('taskkill /IM terminal64.exe /F', shell=True, capture_output=True)
+        time.sleep(2)
+        
+        # فتح
+        if controller.terminal_path:
+            subprocess.Popen([controller.terminal_path])
+            time.sleep(3)
+            return {"success": True, "message": "تم إعادة تشغيل MT5"}
+        else:
+            return {"success": False, "error": "مسار MT5 غير موجود"}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@app.get("/list-files")
+async def list_files(path: str = r"C:\Users\a\ICT\mt5_middleware", api_key: str = Depends(verify_api_key)):
+    """
+    📁 عرض الملفات في مجلد
+    """
+    try:
+        import os
+        files = os.listdir(path)
+        return {
+            "success": True,
+            "path": path,
+            "files": files,
+            "count": len(files)
+        }
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@app.get("/read-file")
+async def read_file(path: str, api_key: str = Depends(verify_api_key)):
+    """
+    📄 قراءة محتوى ملف
+    """
+    try:
+        with open(path, 'r', encoding='utf-8') as f:
+            content = f.read()
+        return {
+            "success": True,
+            "path": path,
+            "content": content[:5000],  # أول 5000 حرف
+            "size": len(content)
+        }
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@app.post("/write-file")
+async def write_file(path: str, content: str, api_key: str = Depends(verify_api_key)):
+    """
+    ✏️ كتابة محتوى لملف
+    """
+    try:
+        with open(path, 'w', encoding='utf-8') as f:
+            f.write(content)
+        return {
+            "success": True,
+            "path": path,
+            "size": len(content)
+        }
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@app.get("/system-info")
+async def system_info(api_key: str = Depends(verify_api_key)):
+    """
+    💻 معلومات النظام
+    """
+    try:
+        import platform
+        import psutil
+        
+        return {
+            "success": True,
+            "system": platform.system(),
+            "machine": platform.machine(),
+            "processor": platform.processor(),
+            "cpu_percent": psutil.cpu_percent(),
+            "memory_percent": psutil.virtual_memory().percent,
+            "mt5_path": controller.terminal_path,
+            "data_path": controller.data_path
+        }
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@app.get("/running-processes")
+async def running_processes(filter: str = "mt", api_key: str = Depends(verify_api_key)):
+    """
+    📋 العمليات الجارية
+    """
+    try:
+        result = subprocess.run(
+            f'tasklist | findstr /i "{filter}"',
+            shell=True,
+            capture_output=True,
+            text=True
+        )
+        processes = [p for p in result.stdout.strip().split('\n') if p]
+        return {
+            "success": True,
+            "filter": filter,
+            "processes": processes,
+            "count": len(processes)
+        }
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
 @app.post("/focus-mt5")
 async def focus_mt5(api_key: str = Depends(verify_api_key)):
     """تركيز نافذة MT5"""
