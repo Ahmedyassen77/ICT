@@ -348,6 +348,77 @@ async def health():
     }
 
 
+@app.get("/screenshot")
+async def take_screenshot(api_key: str = Depends(verify_api_key)):
+    """
+    📸 أخذ لقطة شاشة وإرسالها كـ Base64
+    """
+    try:
+        if not PYAUTOGUI_AVAILABLE:
+            return {"success": False, "error": "pyautogui غير متوفر"}
+        
+        import base64
+        from io import BytesIO
+        
+        # أخذ لقطة الشاشة
+        screenshot = pyautogui.screenshot()
+        
+        # تحويل لـ Base64
+        buffer = BytesIO()
+        screenshot.save(buffer, format='PNG')
+        img_base64 = base64.b64encode(buffer.getvalue()).decode('utf-8')
+        
+        return {
+            "success": True,
+            "image": img_base64,
+            "width": screenshot.width,
+            "height": screenshot.height,
+            "timestamp": datetime.now().isoformat()
+        }
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@app.get("/screenshot-mt5")
+async def screenshot_mt5(api_key: str = Depends(verify_api_key)):
+    """
+    📸 لقطة شاشة لنافذة MT5 فقط
+    """
+    try:
+        if not PYAUTOGUI_AVAILABLE:
+            return {"success": False, "error": "pyautogui غير متوفر"}
+        
+        import base64
+        from io import BytesIO
+        
+        # البحث عن نافذة MT5
+        windows = gw.getWindowsWithTitle('MetaTrader')
+        if not windows:
+            return {"success": False, "error": "نافذة MT5 غير موجودة"}
+        
+        mt5_win = windows[0]
+        
+        # أخذ لقطة للنافذة فقط
+        region = (mt5_win.left, mt5_win.top, mt5_win.width, mt5_win.height)
+        screenshot = pyautogui.screenshot(region=region)
+        
+        # تحويل لـ Base64
+        buffer = BytesIO()
+        screenshot.save(buffer, format='PNG')
+        img_base64 = base64.b64encode(buffer.getvalue()).decode('utf-8')
+        
+        return {
+            "success": True,
+            "image": img_base64,
+            "width": screenshot.width,
+            "height": screenshot.height,
+            "window": mt5_win.title,
+            "timestamp": datetime.now().isoformat()
+        }
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
 @app.post("/focus-mt5")
 async def focus_mt5(api_key: str = Depends(verify_api_key)):
     """تركيز نافذة MT5"""
