@@ -184,9 +184,16 @@ int OnInit()
 //+------------------------------------------------------------------+
 void OnDeinit(const int reason)
 {
-   ObjectsDeleteAll(0, "SMC_");
-   Comment("");
+   // DON'T delete objects when backtest ends - keep them visible!
+   // Only delete when manually removed or chart closed
+   if(reason == REASON_REMOVE || reason == REASON_CHARTCLOSE)
+   {
+      ObjectsDeleteAll(0, "SMC_");
+      Comment("");
+   }
+   
    Print("SMC Strategy v2.1 - Stopped. Reason: ", reason);
+   Print("Objects preserved on chart for analysis!");
 }
 
 //+------------------------------------------------------------------+
