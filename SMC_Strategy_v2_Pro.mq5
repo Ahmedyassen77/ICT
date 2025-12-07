@@ -105,6 +105,8 @@ input bool     Show_Info_Panel = true;            // Show Info Panel
 input bool     Show_Swing_Points = true;          // Show Swing Points (HH,HL,LH,LL)
 input bool     Show_Structure_Lines = true;       // Show Structure Lines
 input bool     Show_Break_Labels = true;          // Show BOS/CHoCH Labels
+input bool     Show_Only_Latest = true;           // Show Only Latest (clean chart)
+input int      Latest_Swings_Count = 3;           // How many latest swings to show (each type)
 
 input group "═══════════ Colors ═══════════"
 input color    Color_HH = clrDodgerBlue;          // Higher High Color
@@ -706,8 +708,14 @@ void DetectStructureBreaks()
 //+------------------------------------------------------------------+
 void DrawAllVisuals()
 {
-   // DON'T delete objects - let them accumulate for full history view!
-   // Objects use unique time-based names, so no duplicates
+   // If Show_Only_Latest - delete old objects first for clean chart
+   if(Show_Only_Latest)
+   {
+      ObjectsDeleteAll(0, "SMC_H_");
+      ObjectsDeleteAll(0, "SMC_L_");
+      ObjectsDeleteAll(0, "SMC_LINE_");
+      ObjectsDeleteAll(0, "SMC_BRK_");
+   }
    
    // Draw swing points with labels
    if(Show_Swing_Points)
@@ -727,86 +735,101 @@ void DrawAllVisuals()
 //+------------------------------------------------------------------+
 void DrawSwingPointsWithLabels()
 {
-   // Draw Swing Highs
-   for(int i = 0; i < ArraySize(g_swing_highs) && i < Max_Swing_Points; i++)
+   // Determine how many swings to show
+   int max_to_show = Show_Only_Latest ? Latest_Swings_Count : Max_Swing_Points;
+   
+   // Draw Swing Highs (only latest if Show_Only_Latest is true)
+   int highs_to_draw = MathMin(ArraySize(g_swing_highs), max_to_show);
+   for(int i = 0; i < highs_to_draw; i++)
    {
       SwingPoint sp = g_swing_highs[i];
-      string base_name = "SMC_SW_H_" + IntegerToString(i);
       
       // Determine color based on type
       color point_color = Color_HH;
       if(sp.swing_type == SWING_LH)
          point_color = Color_LH;
       
-      // Draw arrow - use unique name with time to prevent deletion
-      string arrow_name = "SMC_H_" + IntegerToString((int)sp.time) + "_arr";
-      if(ObjectFind(0, arrow_name) < 0)
-      {
-         ObjectCreate(0, arrow_name, OBJ_ARROW_DOWN, 0, sp.time, sp.price);
-         ObjectSetInteger(0, arrow_name, OBJPROP_COLOR, point_color);
-         ObjectSetInteger(0, arrow_name, OBJPROP_WIDTH, 3);
-         ObjectSetInteger(0, arrow_name, OBJPROP_ANCHOR, ANCHOR_BOTTOM);
-         ObjectSetInteger(0, arrow_name, OBJPROP_ARROWCODE, 234);
-         ObjectSetInteger(0, arrow_name, OBJPROP_SELECTABLE, false);
-         ObjectSetInteger(0, arrow_name, OBJPROP_HIDDEN, true);
-      }
+      // Draw arrow
+      string arrow_name = "SMC_H_" + IntegerToString(i) + "_arr";
+      ObjectDelete(0, arrow_name);  // Delete old first
+      ObjectCreate(0, arrow_name, OBJ_ARROW_DOWN, 0, sp.time, sp.price);
+      ObjectSetInteger(0, arrow_name, OBJPROP_COLOR, point_color);
+      ObjectSetInteger(0, arrow_name, OBJPROP_WIDTH, 3);
+      ObjectSetInteger(0, arrow_name, OBJPROP_ANCHOR, ANCHOR_BOTTOM);
+      ObjectSetInteger(0, arrow_name, OBJPROP_ARROWCODE, 234);
+      ObjectSetInteger(0, arrow_name, OBJPROP_SELECTABLE, false);
       
-      // Draw label - unique name
-      string label_name = "SMC_H_" + IntegerToString((int)sp.time) + "_lbl";
-      double label_price = sp.price + 50 * _Point;  // More offset for visibility
+      // Draw label
+      string label_name = "SMC_H_" + IntegerToString(i) + "_lbl";
+      double label_price = sp.price + 50 * _Point;
       
-      if(ObjectFind(0, label_name) < 0)
-      {
-         ObjectCreate(0, label_name, OBJ_TEXT, 0, sp.time, label_price);
-         ObjectSetString(0, label_name, OBJPROP_TEXT, sp.label);
-         ObjectSetInteger(0, label_name, OBJPROP_COLOR, point_color);
-         ObjectSetInteger(0, label_name, OBJPROP_FONTSIZE, 10);
-         ObjectSetString(0, label_name, OBJPROP_FONT, "Arial Bold");
-         ObjectSetInteger(0, label_name, OBJPROP_ANCHOR, ANCHOR_LOWER);
-         ObjectSetInteger(0, label_name, OBJPROP_SELECTABLE, false);
-         ObjectSetInteger(0, label_name, OBJPROP_HIDDEN, true);
-      }
+      ObjectDelete(0, label_name);
+      ObjectCreate(0, label_name, OBJ_TEXT, 0, sp.time, label_price);
+      ObjectSetString(0, label_name, OBJPROP_TEXT, sp.label);
+      ObjectSetInteger(0, label_name, OBJPROP_COLOR, point_color);
+      ObjectSetInteger(0, label_name, OBJPROP_FONTSIZE, 10);
+      ObjectSetString(0, label_name, OBJPROP_FONT, "Arial Bold");
+      ObjectSetInteger(0, label_name, OBJPROP_ANCHOR, ANCHOR_LOWER);
+      ObjectSetInteger(0, label_name, OBJPROP_SELECTABLE, false);
+      
+      // Draw horizontal line from swing point to current bar
+      string hline_name = "SMC_H_" + IntegerToString(i) + "_line";
+      datetime end_time = iTime(_Symbol, PERIOD_CURRENT, 0);
+      
+      ObjectDelete(0, hline_name);
+      ObjectCreate(0, hline_name, OBJ_TREND, 0, sp.time, sp.price, end_time, sp.price);
+      ObjectSetInteger(0, hline_name, OBJPROP_COLOR, point_color);
+      ObjectSetInteger(0, hline_name, OBJPROP_STYLE, STYLE_DOT);
+      ObjectSetInteger(0, hline_name, OBJPROP_WIDTH, 1);
+      ObjectSetInteger(0, hline_name, OBJPROP_RAY_RIGHT, false);
+      ObjectSetInteger(0, hline_name, OBJPROP_BACK, true);
    }
    
-   // Draw Swing Lows
-   for(int i = 0; i < ArraySize(g_swing_lows) && i < Max_Swing_Points; i++)
+   // Draw Swing Lows (only latest if Show_Only_Latest is true)
+   int lows_to_draw = MathMin(ArraySize(g_swing_lows), max_to_show);
+   for(int i = 0; i < lows_to_draw; i++)
    {
       SwingPoint sp = g_swing_lows[i];
-      string base_name = "SMC_SW_L_" + IntegerToString(i);
       
       // Determine color based on type
       color point_color = Color_HL;
       if(sp.swing_type == SWING_LL)
          point_color = Color_LL;
       
-      // Draw arrow - use unique name with time
-      string arrow_name = "SMC_L_" + IntegerToString((int)sp.time) + "_arr";
-      if(ObjectFind(0, arrow_name) < 0)
-      {
-         ObjectCreate(0, arrow_name, OBJ_ARROW_UP, 0, sp.time, sp.price);
-         ObjectSetInteger(0, arrow_name, OBJPROP_COLOR, point_color);
-         ObjectSetInteger(0, arrow_name, OBJPROP_WIDTH, 3);
-         ObjectSetInteger(0, arrow_name, OBJPROP_ANCHOR, ANCHOR_TOP);
-         ObjectSetInteger(0, arrow_name, OBJPROP_ARROWCODE, 233);
-         ObjectSetInteger(0, arrow_name, OBJPROP_SELECTABLE, false);
-         ObjectSetInteger(0, arrow_name, OBJPROP_HIDDEN, true);
-      }
+      // Draw arrow
+      string arrow_name = "SMC_L_" + IntegerToString(i) + "_arr";
+      ObjectDelete(0, arrow_name);
+      ObjectCreate(0, arrow_name, OBJ_ARROW_UP, 0, sp.time, sp.price);
+      ObjectSetInteger(0, arrow_name, OBJPROP_COLOR, point_color);
+      ObjectSetInteger(0, arrow_name, OBJPROP_WIDTH, 3);
+      ObjectSetInteger(0, arrow_name, OBJPROP_ANCHOR, ANCHOR_TOP);
+      ObjectSetInteger(0, arrow_name, OBJPROP_ARROWCODE, 233);
+      ObjectSetInteger(0, arrow_name, OBJPROP_SELECTABLE, false);
       
-      // Draw label - unique name
-      string label_name = "SMC_L_" + IntegerToString((int)sp.time) + "_lbl";
-      double label_price = sp.price - 50 * _Point;  // More offset
+      // Draw label
+      string label_name = "SMC_L_" + IntegerToString(i) + "_lbl";
+      double label_price = sp.price - 50 * _Point;
       
-      if(ObjectFind(0, label_name) < 0)
-      {
-         ObjectCreate(0, label_name, OBJ_TEXT, 0, sp.time, label_price);
-         ObjectSetString(0, label_name, OBJPROP_TEXT, sp.label);
-         ObjectSetInteger(0, label_name, OBJPROP_COLOR, point_color);
-         ObjectSetInteger(0, label_name, OBJPROP_FONTSIZE, 10);
-         ObjectSetString(0, label_name, OBJPROP_FONT, "Arial Bold");
-         ObjectSetInteger(0, label_name, OBJPROP_ANCHOR, ANCHOR_UPPER);
-         ObjectSetInteger(0, label_name, OBJPROP_SELECTABLE, false);
-         ObjectSetInteger(0, label_name, OBJPROP_HIDDEN, true);
-      }
+      ObjectDelete(0, label_name);
+      ObjectCreate(0, label_name, OBJ_TEXT, 0, sp.time, label_price);
+      ObjectSetString(0, label_name, OBJPROP_TEXT, sp.label);
+      ObjectSetInteger(0, label_name, OBJPROP_COLOR, point_color);
+      ObjectSetInteger(0, label_name, OBJPROP_FONTSIZE, 10);
+      ObjectSetString(0, label_name, OBJPROP_FONT, "Arial Bold");
+      ObjectSetInteger(0, label_name, OBJPROP_ANCHOR, ANCHOR_UPPER);
+      ObjectSetInteger(0, label_name, OBJPROP_SELECTABLE, false);
+      
+      // Draw horizontal line
+      string hline_name = "SMC_L_" + IntegerToString(i) + "_line";
+      datetime end_time = iTime(_Symbol, PERIOD_CURRENT, 0);
+      
+      ObjectDelete(0, hline_name);
+      ObjectCreate(0, hline_name, OBJ_TREND, 0, sp.time, sp.price, end_time, sp.price);
+      ObjectSetInteger(0, hline_name, OBJPROP_COLOR, point_color);
+      ObjectSetInteger(0, hline_name, OBJPROP_STYLE, STYLE_DOT);
+      ObjectSetInteger(0, hline_name, OBJPROP_WIDTH, 1);
+      ObjectSetInteger(0, hline_name, OBJPROP_RAY_RIGHT, false);
+      ObjectSetInteger(0, hline_name, OBJPROP_BACK, true);
    }
 }
 
@@ -819,8 +842,12 @@ void DrawStructureLines()
    if(num_swings < 2)
       return;
    
+   // How many lines to draw
+   int max_lines = Show_Only_Latest ? (Latest_Swings_Count * 2) : Max_Swing_Points;
+   int lines_drawn = 0;
+   
    // Connect alternating highs and lows to show structure
-   for(int i = 0; i < num_swings - 1 && i < Max_Swing_Points; i++)
+   for(int i = 0; i < num_swings - 1 && lines_drawn < max_lines; i++)
    {
       SwingPoint current = g_all_swings[i];
       SwingPoint next = g_all_swings[i + 1];
@@ -828,7 +855,7 @@ void DrawStructureLines()
       // Only connect if they are different (high to low or low to high)
       if(current.is_high != next.is_high)
       {
-         string line_name = "SMC_LINE_" + IntegerToString(i);
+         string line_name = "SMC_LINE_" + IntegerToString(lines_drawn);
          
          // Color based on direction
          color line_color = Color_Structure_Bull;
@@ -843,6 +870,7 @@ void DrawStructureLines()
             line_color = Color_Structure_Bull;
          }
          
+         ObjectDelete(0, line_name);
          ObjectCreate(0, line_name, OBJ_TREND, 0, 
                       next.time, next.price,    // Start from older point
                       current.time, current.price);  // To newer point
@@ -851,6 +879,8 @@ void DrawStructureLines()
          ObjectSetInteger(0, line_name, OBJPROP_STYLE, STYLE_SOLID);
          ObjectSetInteger(0, line_name, OBJPROP_RAY_RIGHT, false);
          ObjectSetInteger(0, line_name, OBJPROP_BACK, true);
+         
+         lines_drawn++;
       }
    }
 }
