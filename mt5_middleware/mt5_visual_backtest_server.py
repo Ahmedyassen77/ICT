@@ -522,6 +522,96 @@ async def open_mt5(api_key: str = Depends(verify_api_key)):
         return {"success": False, "error": str(e)}
 
 
+@app.post("/start-backtest")
+async def start_backtest(
+    expert: str = "SMC_Strategy_v2_Pro",
+    symbol: str = "EURUSD",
+    timeframe: str = "H1",
+    from_date: str = "2024.01.01",
+    to_date: str = "2024.11.30",
+    visual: bool = True,
+    deposit: int = 10000,
+    api_key: str = Depends(verify_api_key)
+):
+    """
+    🚀 تشغيل Backtest بملف INI - لا يتعلق!
+    
+    هذا الـ endpoint يستخدم subprocess.Popen بدلاً من run
+    فيشغل MT5 في الخلفية ويرجع فوراً
+    """
+    try:
+        # 1. إغلاق MT5 أولاً
+        subprocess.run('taskkill /IM terminal64.exe /F', shell=True, capture_output=True)
+        time.sleep(1)
+        
+        # 2. تحويل الإطار الزمني
+        tf_map = {
+            "M1": "1", "M5": "5", "M15": "15", "M30": "30",
+            "H1": "60", "H4": "240", "D1": "1440", "W1": "10080"
+        }
+        period = tf_map.get(timeframe.upper(), "60")
+        
+        # 3. إنشاء ملف INI
+        ini_content = f"""[Tester]
+Expert={expert}
+ExpertParameters=
+Symbol={symbol}
+Period={period}
+FromDate={from_date}
+ToDate={to_date}
+Model=1
+Optimization=0
+Visual={1 if visual else 0}
+Deposit={deposit}
+Leverage=100
+Currency=USD
+UseLocal=1
+UseRemote=0
+UseCloud=0
+ReplaceReport=1
+ShutdownTerminal=0
+"""
+        
+        # 4. حفظ INI
+        if controller.data_path:
+            ini_path = os.path.join(controller.data_path, 'tester', f'{expert}_backtest.ini')
+        else:
+            ini_path = f'C:\\Users\\a\\AppData\\Roaming\\MetaQuotes\\Terminal\\010E047102812FC0C18890992854220E\\tester\\{expert}_backtest.ini'
+        
+        os.makedirs(os.path.dirname(ini_path), exist_ok=True)
+        with open(ini_path, 'w', encoding='utf-8') as f:
+            f.write(ini_content)
+        
+        # 5. تشغيل MT5 مع INI - استخدام Popen بدون انتظار!
+        if controller.terminal_path:
+            # استخدام Popen مباشرة - لا ينتظر!
+            subprocess.Popen(
+                [controller.terminal_path, f'/config:{ini_path}'],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL
+            )
+            
+            return {
+                "success": True,
+                "message": "🚀 MT5 بدأ مع Strategy Tester!",
+                "config": {
+                    "expert": expert,
+                    "symbol": symbol,
+                    "timeframe": timeframe,
+                    "period": f"{from_date} → {to_date}",
+                    "visual": visual,
+                    "deposit": deposit
+                },
+                "ini_path": ini_path,
+                "note": "👀 شاهد شاشتك الآن!"
+            }
+        else:
+            return {"success": False, "error": "MT5 terminal not found"}
+            
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
 @app.post("/restart-mt5")
 async def restart_mt5(api_key: str = Depends(verify_api_key)):
     """
