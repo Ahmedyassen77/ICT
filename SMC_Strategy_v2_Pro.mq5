@@ -134,11 +134,11 @@ SwingPoint g_swing_highs[];
 SwingPoint g_swing_lows[];
 SwingPoint g_all_swings[];  // Combined and sorted by time
 
+// Array for all structure breaks (BOS/CHoCH)
+StructureBreak g_all_breaks[];
+
 // Last bar time for new bar detection
 datetime g_last_bar_time = 0;
-
-// Object counter for unique names
-int g_object_counter = 0;
 
 //+------------------------------------------------------------------+
 //| Expert initialization function                                    |
@@ -156,6 +156,7 @@ int OnInit()
    ArrayResize(g_swing_highs, 0);
    ArrayResize(g_swing_lows, 0);
    ArrayResize(g_all_swings, 0);
+   ArrayResize(g_all_breaks, 0);
    ArrayResize(g_market.swing_points, 0);
    
    // Initialize market structure
@@ -586,121 +587,182 @@ void DetermineMarketBias()
 }
 
 //+------------------------------------------------------------------+
-//| Detect Structure Breaks (BOS / CHoCH)                             |
+//| Detect Structure Breaks (BOS / CHoCH) - Historical Analysis       |
 //+------------------------------------------------------------------+
 void DetectStructureBreaks()
 {
    g_market.last_break.type = BREAK_NONE;
+   ArrayResize(g_all_breaks, 0);
    
-   if(ArraySize(g_swing_highs) < 2 || ArraySize(g_swing_lows) < 2)
+   int num_swings = ArraySize(g_all_swings);
+   if(num_swings < 4)
       return;
    
-   // Get current price action
-   double close_1 = iClose(_Symbol, PERIOD_CURRENT, 1);  // Last closed candle
-   double high_1 = iHigh(_Symbol, PERIOD_CURRENT, 1);
-   double low_1 = iLow(_Symbol, PERIOD_CURRENT, 1);
+   // Track bias as we go through history (from oldest to newest)
+   ENUM_MARKET_BIAS running_bias = BIAS_NEUTRAL;
+   double last_significant_high = 0;
+   double last_significant_low = 0;
    
-   // Most recent swing points
-   SwingPoint last_high = g_swing_highs[0];
-   SwingPoint last_low = g_swing_lows[0];
-   SwingPoint prev_high = g_swing_highs[1];
-   SwingPoint prev_low = g_swing_lows[1];
-   
-   //+------------------------------------------------------------------+
-   // CHECK FOR BULLISH BREAK (price breaks above a swing high)
-   //+------------------------------------------------------------------+
-   // In BEARISH market: breaking above LH = CHoCH (reversal)
-   // In BULLISH market: breaking above HH = BOS (continuation)
-   
-   double level_to_check_bull = last_high.price;
-   bool break_above = false;
-   double break_price_bull = 0;
-   
-   if(Require_Close_Break)
-      break_above = (close_1 > level_to_check_bull);
-   else
-      break_above = (high_1 > level_to_check_bull);
-   
-   if(break_above)
+   // Go through swings from oldest to newest (reverse order)
+   for(int i = num_swings - 1; i >= 1; i--)
    {
-      break_price_bull = Require_Close_Break ? close_1 : high_1;
-      double distance = (break_price_bull - level_to_check_bull) / _Point;
+      SwingPoint current = g_all_swings[i];
       
-      if(distance >= Min_Break_Points)
+      // Update running highs/lows
+      if(current.is_high)
+         last_significant_high = current.price;
+      else
+         last_significant_low = current.price;
+      
+      // Look at next swing (more recent)
+      SwingPoint next = g_all_swings[i - 1];
+      
+      // Check for break between these swings
+      // We need to check if price between current and next swing broke any level
+      
+      // Find bars between current and next swing
+      int start_bar = current.bar_index;
+      int end_bar = next.bar_index;
+      
+      for(int bar = start_bar - 1; bar > end_bar; bar--)
       {
-         // Determine if BOS or CHoCH
-         if(g_market.current_bias == BIAS_BEARISH)
+         double bar_high = iHigh(_Symbol, PERIOD_CURRENT, bar);
+         double bar_low = iLow(_Symbol, PERIOD_CURRENT, bar);
+         double bar_close = iClose(_Symbol, PERIOD_CURRENT, bar);
+         datetime bar_time = iTime(_Symbol, PERIOD_CURRENT, bar);
+         
+         // Check for bullish break (break above last significant high)
+         if(last_significant_high > 0)
          {
-            // CHoCH - reversal from bearish to bullish
-            g_market.last_break.type = BREAK_CHOCH_BULL;
-            Print("═══ CHoCH BULLISH DETECTED ═══");
+            double break_price = Require_Close_Break ? bar_close : bar_high;
+            if(break_price > last_significant_high)
+            {
+               double distance = (break_price - last_significant_high) / _Point;
+               if(distance >= Min_Break_Points)
+               {
+                  // Check if this break already recorded
+                  bool already_recorded = false;
+                  for(int b = 0; b < ArraySize(g_all_breaks); b++)
+                  {
+                     if(MathAbs(g_all_breaks[b].break_level - last_significant_high) < _Point)
+                     {
+                        already_recorded = true;
+                        break;
+                     }
+                  }
+                  
+                  if(!already_recorded)
+                  {
+                     StructureBreak brk;
+                     brk.break_level = last_significant_high;
+                     brk.break_price = break_price;
+                     brk.break_time = bar_time;
+                     brk.break_bar = bar;
+                     brk.break_distance = distance;
+                     
+                     // Determine type based on running bias
+                     if(running_bias == BIAS_BEARISH)
+                     {
+                        brk.type = BREAK_CHOCH_BULL;
+                        running_bias = BIAS_BULLISH;  // Bias changes after CHoCH
+                     }
+                     else
+                     {
+                        brk.type = BREAK_BOS_BULL;
+                     }
+                     
+                     // Add to array
+                     int size = ArraySize(g_all_breaks);
+                     ArrayResize(g_all_breaks, size + 1);
+                     g_all_breaks[size] = brk;
+                     
+                     // Update last significant high
+                     last_significant_high = break_price;
+                  }
+               }
+            }
          }
-         else
+         
+         // Check for bearish break (break below last significant low)
+         if(last_significant_low > 0)
          {
-            // BOS - continuation in bullish
-            g_market.last_break.type = BREAK_BOS_BULL;
-            Print("═══ BOS BULLISH DETECTED ═══");
+            double break_price = Require_Close_Break ? bar_close : bar_low;
+            if(break_price < last_significant_low)
+            {
+               double distance = (last_significant_low - break_price) / _Point;
+               if(distance >= Min_Break_Points)
+               {
+                  // Check if this break already recorded
+                  bool already_recorded = false;
+                  for(int b = 0; b < ArraySize(g_all_breaks); b++)
+                  {
+                     if(MathAbs(g_all_breaks[b].break_level - last_significant_low) < _Point)
+                     {
+                        already_recorded = true;
+                        break;
+                     }
+                  }
+                  
+                  if(!already_recorded)
+                  {
+                     StructureBreak brk;
+                     brk.break_level = last_significant_low;
+                     brk.break_price = break_price;
+                     brk.break_time = bar_time;
+                     brk.break_bar = bar;
+                     brk.break_distance = distance;
+                     
+                     // Determine type based on running bias
+                     if(running_bias == BIAS_BULLISH)
+                     {
+                        brk.type = BREAK_CHOCH_BEAR;
+                        running_bias = BIAS_BEARISH;  // Bias changes after CHoCH
+                     }
+                     else
+                     {
+                        brk.type = BREAK_BOS_BEAR;
+                     }
+                     
+                     // Add to array
+                     int size = ArraySize(g_all_breaks);
+                     ArrayResize(g_all_breaks, size + 1);
+                     g_all_breaks[size] = brk;
+                     
+                     // Update last significant low
+                     last_significant_low = break_price;
+                  }
+               }
+            }
          }
-         
-         g_market.last_break.break_level = level_to_check_bull;
-         g_market.last_break.break_price = break_price_bull;
-         g_market.last_break.break_time = iTime(_Symbol, PERIOD_CURRENT, 1);
-         g_market.last_break.break_bar = 1;
-         g_market.last_break.break_distance = distance;
-         
-         // Mark the swing as broken
-         g_swing_highs[0].is_broken = true;
-         
-         return;  // Only report one break per bar
+      }
+      
+      // Update running bias based on swing types
+      if(current.swing_type == SWING_HH || current.swing_type == SWING_HL)
+         running_bias = BIAS_BULLISH;
+      else if(current.swing_type == SWING_LH || current.swing_type == SWING_LL)
+         running_bias = BIAS_BEARISH;
+   }
+   
+   // Sort breaks by bar_index (most recent first)
+   int total_breaks = ArraySize(g_all_breaks);
+   for(int i = 0; i < total_breaks - 1; i++)
+   {
+      for(int j = i + 1; j < total_breaks; j++)
+      {
+         if(g_all_breaks[j].break_bar < g_all_breaks[i].break_bar)
+         {
+            StructureBreak temp = g_all_breaks[i];
+            g_all_breaks[i] = g_all_breaks[j];
+            g_all_breaks[j] = temp;
+         }
       }
    }
    
-   //+------------------------------------------------------------------+
-   // CHECK FOR BEARISH BREAK (price breaks below a swing low)
-   //+------------------------------------------------------------------+
-   // In BULLISH market: breaking below HL = CHoCH (reversal)
-   // In BEARISH market: breaking below LL = BOS (continuation)
+   // Set last break
+   if(total_breaks > 0)
+      g_market.last_break = g_all_breaks[0];
    
-   double level_to_check_bear = last_low.price;
-   bool break_below = false;
-   double break_price_bear = 0;
-   
-   if(Require_Close_Break)
-      break_below = (close_1 < level_to_check_bear);
-   else
-      break_below = (low_1 < level_to_check_bear);
-   
-   if(break_below)
-   {
-      break_price_bear = Require_Close_Break ? close_1 : low_1;
-      double distance = (level_to_check_bear - break_price_bear) / _Point;
-      
-      if(distance >= Min_Break_Points)
-      {
-         // Determine if BOS or CHoCH
-         if(g_market.current_bias == BIAS_BULLISH)
-         {
-            // CHoCH - reversal from bullish to bearish
-            g_market.last_break.type = BREAK_CHOCH_BEAR;
-            Print("═══ CHoCH BEARISH DETECTED ═══");
-         }
-         else
-         {
-            // BOS - continuation in bearish
-            g_market.last_break.type = BREAK_BOS_BEAR;
-            Print("═══ BOS BEARISH DETECTED ═══");
-         }
-         
-         g_market.last_break.break_level = level_to_check_bear;
-         g_market.last_break.break_price = break_price_bear;
-         g_market.last_break.break_time = iTime(_Symbol, PERIOD_CURRENT, 1);
-         g_market.last_break.break_bar = 1;
-         g_market.last_break.break_distance = distance;
-         
-         // Mark the swing as broken
-         g_swing_lows[0].is_broken = true;
-      }
-   }
+   Print("Found ", total_breaks, " Structure Breaks (BOS/CHoCH)");
 }
 
 //+------------------------------------------------------------------+
@@ -725,9 +787,9 @@ void DrawAllVisuals()
    if(Show_Structure_Lines)
       DrawStructureLines();
    
-   // Draw break labels (BOS/CHoCH)
-   if(Show_Break_Labels && g_market.last_break.type != BREAK_NONE)
-      DrawBreakLabel();
+   // Draw break labels (BOS/CHoCH) - draw all breaks
+   if(Show_Break_Labels)
+      DrawAllBreakLabels();
 }
 
 //+------------------------------------------------------------------+
@@ -886,67 +948,81 @@ void DrawStructureLines()
 }
 
 //+------------------------------------------------------------------+
-//| Draw Break Label (BOS / CHoCH)                                    |
+//| Draw All Break Labels (BOS / CHoCH)                               |
 //+------------------------------------------------------------------+
-void DrawBreakLabel()
+void DrawAllBreakLabels()
 {
-   StructureBreak brk = g_market.last_break;
+   int total_breaks = ArraySize(g_all_breaks);
+   if(total_breaks == 0)
+      return;
    
-   string label_text = "";
-   color label_color = clrWhite;
+   // Determine how many breaks to show
+   int max_to_show = Show_Only_Latest ? Latest_Swings_Count : total_breaks;
+   int breaks_to_draw = MathMin(total_breaks, max_to_show);
    
-   switch(brk.type)
+   for(int i = 0; i < breaks_to_draw; i++)
    {
-      case BREAK_BOS_BULL:
-         label_text = "BOS ▲";
-         label_color = Color_BOS_Bull;
-         break;
-      case BREAK_BOS_BEAR:
-         label_text = "BOS ▼";
-         label_color = Color_BOS_Bear;
-         break;
-      case BREAK_CHOCH_BULL:
-         label_text = "★ CHoCH ▲";
-         label_color = Color_CHoCH_Bull;
-         break;
-      case BREAK_CHOCH_BEAR:
-         label_text = "★ CHoCH ▼";
-         label_color = Color_CHoCH_Bear;
-         break;
-      default:
-         return;
+      StructureBreak brk = g_all_breaks[i];
+      
+      string label_text = "";
+      color label_color = clrWhite;
+      
+      switch(brk.type)
+      {
+         case BREAK_BOS_BULL:
+            label_text = "BOS ▲";
+            label_color = Color_BOS_Bull;
+            break;
+         case BREAK_BOS_BEAR:
+            label_text = "BOS ▼";
+            label_color = Color_BOS_Bear;
+            break;
+         case BREAK_CHOCH_BULL:
+            label_text = "★ CHoCH ▲";
+            label_color = Color_CHoCH_Bull;
+            break;
+         case BREAK_CHOCH_BEAR:
+            label_text = "★ CHoCH ▼";
+            label_color = Color_CHoCH_Bear;
+            break;
+         default:
+            continue;
+      }
+      
+      // Draw break line
+      string line_name = "SMC_BRK_LINE_" + IntegerToString(i);
+      datetime end_time = iTime(_Symbol, PERIOD_CURRENT, 0);
+      
+      ObjectDelete(0, line_name);
+      ObjectCreate(0, line_name, OBJ_TREND, 0, brk.break_time, brk.break_level, end_time, brk.break_level);
+      ObjectSetInteger(0, line_name, OBJPROP_COLOR, label_color);
+      ObjectSetInteger(0, line_name, OBJPROP_STYLE, STYLE_DASH);
+      ObjectSetInteger(0, line_name, OBJPROP_WIDTH, 2);
+      ObjectSetInteger(0, line_name, OBJPROP_RAY_RIGHT, false);
+      ObjectSetInteger(0, line_name, OBJPROP_BACK, true);
+      
+      // Draw label
+      string text_name = "SMC_BRK_TXT_" + IntegerToString(i);
+      double label_price = brk.break_level;
+      
+      ObjectDelete(0, text_name);
+      ObjectCreate(0, text_name, OBJ_TEXT, 0, brk.break_time, label_price);
+      ObjectSetString(0, text_name, OBJPROP_TEXT, label_text);
+      ObjectSetInteger(0, text_name, OBJPROP_COLOR, label_color);
+      ObjectSetInteger(0, text_name, OBJPROP_FONTSIZE, 12);
+      ObjectSetString(0, text_name, OBJPROP_FONT, "Arial Bold");
+      ObjectSetInteger(0, text_name, OBJPROP_ANCHOR, ANCHOR_LEFT);
+      
+      // Draw arrow at break point
+      string arrow_name = "SMC_BRK_ARW_" + IntegerToString(i);
+      int arrow_code = (brk.type == BREAK_BOS_BULL || brk.type == BREAK_CHOCH_BULL) ? 233 : 234;
+      
+      ObjectDelete(0, arrow_name);
+      ObjectCreate(0, arrow_name, OBJ_ARROW, 0, brk.break_time, brk.break_price);
+      ObjectSetInteger(0, arrow_name, OBJPROP_ARROWCODE, arrow_code);
+      ObjectSetInteger(0, arrow_name, OBJPROP_COLOR, label_color);
+      ObjectSetInteger(0, arrow_name, OBJPROP_WIDTH, 3);
    }
-   
-   g_object_counter++;
-   
-   // Draw break line
-   string line_name = "SMC_BRK_LINE_" + IntegerToString(g_object_counter);
-   datetime end_time = iTime(_Symbol, PERIOD_CURRENT, 0);
-   
-   ObjectCreate(0, line_name, OBJ_TREND, 0, brk.break_time, brk.break_level, end_time, brk.break_level);
-   ObjectSetInteger(0, line_name, OBJPROP_COLOR, label_color);
-   ObjectSetInteger(0, line_name, OBJPROP_STYLE, STYLE_DASH);
-   ObjectSetInteger(0, line_name, OBJPROP_WIDTH, 2);
-   ObjectSetInteger(0, line_name, OBJPROP_RAY_RIGHT, true);
-   
-   // Draw label
-   string text_name = "SMC_BRK_TXT_" + IntegerToString(g_object_counter);
-   double label_price = brk.break_level;
-   
-   ObjectCreate(0, text_name, OBJ_TEXT, 0, brk.break_time, label_price);
-   ObjectSetString(0, text_name, OBJPROP_TEXT, label_text);
-   ObjectSetInteger(0, text_name, OBJPROP_COLOR, label_color);
-   ObjectSetInteger(0, text_name, OBJPROP_FONTSIZE, 14);
-   ObjectSetString(0, text_name, OBJPROP_FONT, "Arial Black");
-   
-   // Draw arrow at break point
-   string arrow_name = "SMC_BRK_ARW_" + IntegerToString(g_object_counter);
-   int arrow_code = (brk.type == BREAK_BOS_BULL || brk.type == BREAK_CHOCH_BULL) ? 233 : 234;
-   
-   ObjectCreate(0, arrow_name, OBJ_ARROW, 0, brk.break_time, brk.break_price);
-   ObjectSetInteger(0, arrow_name, OBJPROP_ARROWCODE, arrow_code);
-   ObjectSetInteger(0, arrow_name, OBJPROP_COLOR, label_color);
-   ObjectSetInteger(0, arrow_name, OBJPROP_WIDTH, 4);
 }
 
 //+------------------------------------------------------------------+
