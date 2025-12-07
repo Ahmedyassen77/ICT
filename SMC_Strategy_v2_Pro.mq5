@@ -184,16 +184,23 @@ int OnInit()
 //+------------------------------------------------------------------+
 void OnDeinit(const int reason)
 {
-   // DON'T delete objects when backtest ends - keep them visible!
-   // Only delete when manually removed or chart closed
-   if(reason == REASON_REMOVE || reason == REASON_CHARTCLOSE)
+   // In Strategy Tester - NEVER delete objects!
+   // This keeps all drawings visible after backtest ends
+   if(MQLInfoInteger(MQL_TESTER))
+   {
+      Print("Backtest ended - Objects KEPT on chart for analysis!");
+      Print("Total objects: ", ObjectsTotal(0));
+      return;  // EXIT - don't delete anything!
+   }
+   
+   // Only delete when manually removed from live chart
+   if(reason == REASON_REMOVE)
    {
       ObjectsDeleteAll(0, "SMC_");
       Comment("");
    }
    
    Print("SMC Strategy v2.1 - Stopped. Reason: ", reason);
-   Print("Objects preserved on chart for analysis!");
 }
 
 //+------------------------------------------------------------------+
@@ -201,16 +208,23 @@ void OnDeinit(const int reason)
 //+------------------------------------------------------------------+
 void OnTick()
 {
-   // Only process on new bar
-   if(!IsNewBar())
-      return;
+   // Process on every new bar OR first tick
+   static bool first_run = true;
    
-   // Full market analysis
-   FullMarketAnalysis();
-   
-   // Update info panel
-   if(Show_Info_Panel)
-      UpdateInfoPanel();
+   if(first_run || IsNewBar())
+   {
+      first_run = false;
+      
+      // Full market analysis
+      FullMarketAnalysis();
+      
+      // Update info panel
+      if(Show_Info_Panel)
+         UpdateInfoPanel();
+         
+      // Force chart redraw
+      ChartRedraw(0);
+   }
 }
 
 //+------------------------------------------------------------------+
@@ -692,11 +706,8 @@ void DetectStructureBreaks()
 //+------------------------------------------------------------------+
 void DrawAllVisuals()
 {
-   // Delete old objects
-   ObjectsDeleteAll(0, "SMC_SW_");
-   ObjectsDeleteAll(0, "SMC_LBL_");
-   ObjectsDeleteAll(0, "SMC_LINE_");
-   ObjectsDeleteAll(0, "SMC_BRK_");
+   // DON'T delete objects - let them accumulate for full history view!
+   // Objects use unique time-based names, so no duplicates
    
    // Draw swing points with labels
    if(Show_Swing_Points)
@@ -727,35 +738,34 @@ void DrawSwingPointsWithLabels()
       if(sp.swing_type == SWING_LH)
          point_color = Color_LH;
       
-      // Draw arrow
-      string arrow_name = base_name + "_arrow";
-      ObjectCreate(0, arrow_name, OBJ_ARROW_DOWN, 0, sp.time, sp.price);
-      ObjectSetInteger(0, arrow_name, OBJPROP_COLOR, point_color);
-      ObjectSetInteger(0, arrow_name, OBJPROP_WIDTH, 3);
-      ObjectSetInteger(0, arrow_name, OBJPROP_ANCHOR, ANCHOR_BOTTOM);
-      ObjectSetInteger(0, arrow_name, OBJPROP_ARROWCODE, 234);  // Down arrow
+      // Draw arrow - use unique name with time to prevent deletion
+      string arrow_name = "SMC_H_" + IntegerToString((int)sp.time) + "_arr";
+      if(ObjectFind(0, arrow_name) < 0)
+      {
+         ObjectCreate(0, arrow_name, OBJ_ARROW_DOWN, 0, sp.time, sp.price);
+         ObjectSetInteger(0, arrow_name, OBJPROP_COLOR, point_color);
+         ObjectSetInteger(0, arrow_name, OBJPROP_WIDTH, 3);
+         ObjectSetInteger(0, arrow_name, OBJPROP_ANCHOR, ANCHOR_BOTTOM);
+         ObjectSetInteger(0, arrow_name, OBJPROP_ARROWCODE, 234);
+         ObjectSetInteger(0, arrow_name, OBJPROP_SELECTABLE, false);
+         ObjectSetInteger(0, arrow_name, OBJPROP_HIDDEN, true);
+      }
       
-      // Draw label
-      string label_name = "SMC_LBL_H_" + IntegerToString(i);
-      double label_price = sp.price + 20 * _Point;
+      // Draw label - unique name
+      string label_name = "SMC_H_" + IntegerToString((int)sp.time) + "_lbl";
+      double label_price = sp.price + 50 * _Point;  // More offset for visibility
       
-      ObjectCreate(0, label_name, OBJ_TEXT, 0, sp.time, label_price);
-      ObjectSetString(0, label_name, OBJPROP_TEXT, sp.label);
-      ObjectSetInteger(0, label_name, OBJPROP_COLOR, point_color);
-      ObjectSetInteger(0, label_name, OBJPROP_FONTSIZE, 12);
-      ObjectSetString(0, label_name, OBJPROP_FONT, "Arial Black");
-      ObjectSetInteger(0, label_name, OBJPROP_ANCHOR, ANCHOR_LOWER);
-      
-      // Draw horizontal dotted line from swing point
-      string hline_name = base_name + "_hline";
-      datetime end_time = iTime(_Symbol, PERIOD_CURRENT, 0);
-      
-      ObjectCreate(0, hline_name, OBJ_TREND, 0, sp.time, sp.price, end_time, sp.price);
-      ObjectSetInteger(0, hline_name, OBJPROP_COLOR, point_color);
-      ObjectSetInteger(0, hline_name, OBJPROP_STYLE, STYLE_DOT);
-      ObjectSetInteger(0, hline_name, OBJPROP_WIDTH, 1);
-      ObjectSetInteger(0, hline_name, OBJPROP_RAY_RIGHT, false);
-      ObjectSetInteger(0, hline_name, OBJPROP_BACK, true);
+      if(ObjectFind(0, label_name) < 0)
+      {
+         ObjectCreate(0, label_name, OBJ_TEXT, 0, sp.time, label_price);
+         ObjectSetString(0, label_name, OBJPROP_TEXT, sp.label);
+         ObjectSetInteger(0, label_name, OBJPROP_COLOR, point_color);
+         ObjectSetInteger(0, label_name, OBJPROP_FONTSIZE, 10);
+         ObjectSetString(0, label_name, OBJPROP_FONT, "Arial Bold");
+         ObjectSetInteger(0, label_name, OBJPROP_ANCHOR, ANCHOR_LOWER);
+         ObjectSetInteger(0, label_name, OBJPROP_SELECTABLE, false);
+         ObjectSetInteger(0, label_name, OBJPROP_HIDDEN, true);
+      }
    }
    
    // Draw Swing Lows
@@ -769,35 +779,34 @@ void DrawSwingPointsWithLabels()
       if(sp.swing_type == SWING_LL)
          point_color = Color_LL;
       
-      // Draw arrow
-      string arrow_name = base_name + "_arrow";
-      ObjectCreate(0, arrow_name, OBJ_ARROW_UP, 0, sp.time, sp.price);
-      ObjectSetInteger(0, arrow_name, OBJPROP_COLOR, point_color);
-      ObjectSetInteger(0, arrow_name, OBJPROP_WIDTH, 3);
-      ObjectSetInteger(0, arrow_name, OBJPROP_ANCHOR, ANCHOR_TOP);
-      ObjectSetInteger(0, arrow_name, OBJPROP_ARROWCODE, 233);  // Up arrow
+      // Draw arrow - use unique name with time
+      string arrow_name = "SMC_L_" + IntegerToString((int)sp.time) + "_arr";
+      if(ObjectFind(0, arrow_name) < 0)
+      {
+         ObjectCreate(0, arrow_name, OBJ_ARROW_UP, 0, sp.time, sp.price);
+         ObjectSetInteger(0, arrow_name, OBJPROP_COLOR, point_color);
+         ObjectSetInteger(0, arrow_name, OBJPROP_WIDTH, 3);
+         ObjectSetInteger(0, arrow_name, OBJPROP_ANCHOR, ANCHOR_TOP);
+         ObjectSetInteger(0, arrow_name, OBJPROP_ARROWCODE, 233);
+         ObjectSetInteger(0, arrow_name, OBJPROP_SELECTABLE, false);
+         ObjectSetInteger(0, arrow_name, OBJPROP_HIDDEN, true);
+      }
       
-      // Draw label
-      string label_name = "SMC_LBL_L_" + IntegerToString(i);
-      double label_price = sp.price - 20 * _Point;
+      // Draw label - unique name
+      string label_name = "SMC_L_" + IntegerToString((int)sp.time) + "_lbl";
+      double label_price = sp.price - 50 * _Point;  // More offset
       
-      ObjectCreate(0, label_name, OBJ_TEXT, 0, sp.time, label_price);
-      ObjectSetString(0, label_name, OBJPROP_TEXT, sp.label);
-      ObjectSetInteger(0, label_name, OBJPROP_COLOR, point_color);
-      ObjectSetInteger(0, label_name, OBJPROP_FONTSIZE, 12);
-      ObjectSetString(0, label_name, OBJPROP_FONT, "Arial Black");
-      ObjectSetInteger(0, label_name, OBJPROP_ANCHOR, ANCHOR_UPPER);
-      
-      // Draw horizontal dotted line from swing point
-      string hline_name = base_name + "_hline";
-      datetime end_time = iTime(_Symbol, PERIOD_CURRENT, 0);
-      
-      ObjectCreate(0, hline_name, OBJ_TREND, 0, sp.time, sp.price, end_time, sp.price);
-      ObjectSetInteger(0, hline_name, OBJPROP_COLOR, point_color);
-      ObjectSetInteger(0, hline_name, OBJPROP_STYLE, STYLE_DOT);
-      ObjectSetInteger(0, hline_name, OBJPROP_WIDTH, 1);
-      ObjectSetInteger(0, hline_name, OBJPROP_RAY_RIGHT, false);
-      ObjectSetInteger(0, hline_name, OBJPROP_BACK, true);
+      if(ObjectFind(0, label_name) < 0)
+      {
+         ObjectCreate(0, label_name, OBJ_TEXT, 0, sp.time, label_price);
+         ObjectSetString(0, label_name, OBJPROP_TEXT, sp.label);
+         ObjectSetInteger(0, label_name, OBJPROP_COLOR, point_color);
+         ObjectSetInteger(0, label_name, OBJPROP_FONTSIZE, 10);
+         ObjectSetString(0, label_name, OBJPROP_FONT, "Arial Bold");
+         ObjectSetInteger(0, label_name, OBJPROP_ANCHOR, ANCHOR_UPPER);
+         ObjectSetInteger(0, label_name, OBJPROP_SELECTABLE, false);
+         ObjectSetInteger(0, label_name, OBJPROP_HIDDEN, true);
+      }
    }
 }
 
