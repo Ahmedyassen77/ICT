@@ -703,6 +703,20 @@ void SortBreaksNewestFirst()
 //+------------------------------------------------------------------+
 void DrawAllVisuals()
 {
+   // Count classified swings
+   int hh_count = 0, hl_count = 0, lh_count = 0, ll_count = 0;
+   for(int j = 0; j < ArraySize(g_swings); j++)
+   {
+      switch(g_swings[j].swing_type)
+      {
+         case SWING_HH: hh_count++; break;
+         case SWING_HL: hl_count++; break;
+         case SWING_LH: lh_count++; break;
+         case SWING_LL: ll_count++; break;
+      }
+   }
+   Print("DrawAllVisuals: HH=", hh_count, " HL=", hl_count, " LH=", lh_count, " LL=", ll_count, " Breaks=", ArraySize(g_breaks));
+   
    // Clear old objects
    if(Show_Only_Latest)
    {
@@ -719,6 +733,8 @@ void DrawAllVisuals()
    
    if(Show_Break_Labels)
       DrawBreaks();
+   
+   ChartRedraw(0);
 }
 
 //+------------------------------------------------------------------+
