@@ -1,11 +1,11 @@
 //+------------------------------------------------------------------+
 //|                                               SMC_Indicator.mq5 |
 //|                         Smart Money Concepts - Visual Indicator  |
-//|                                    Version 1.0                   |
+//|                                    Version 2.0 - Latest Only    |
 //+------------------------------------------------------------------+
-#property copyright "SMC Indicator v1.0"
+#property copyright "SMC Indicator v2.0"
 #property link      "https://github.com/Ahmedyassen77/ICT"
-#property version   "1.00"
+#property version   "2.00"
 #property indicator_chart_window
 #property indicator_buffers 0
 #property indicator_plots   0
@@ -13,8 +13,15 @@
 //+------------------------------------------------------------------+
 //| INPUT PARAMETERS                                                  |
 //+------------------------------------------------------------------+
+input group "═══════════ Display Settings ═══════════"
+input bool     Show_Only_Latest = true;      // Show Only Latest Concepts
+input int      Latest_Count = 5;             // Number of Latest to Show
+
+input group "═══════════ Swing Detection ═══════════"
 input int      Swing_Strength = 3;           // Swing Strength
-input int      Lookback = 100;               // Lookback Bars
+input int      Lookback = 200;               // Lookback Bars
+
+input group "═══════════ Colors ═══════════"
 input color    Color_HH = clrDodgerBlue;     // HH Color
 input color    Color_HL = clrLime;           // HL Color
 input color    Color_LH = clrOrange;         // LH Color
@@ -23,10 +30,34 @@ input color    Color_BOS = clrYellow;        // BOS Color
 input color    Color_CHoCH = clrMagenta;     // CHoCH Color
 
 //+------------------------------------------------------------------+
+//| STRUCTURES                                                        |
+//+------------------------------------------------------------------+
+struct SwingInfo
+{
+   string   label;
+   color    clr;
+   double   price;
+   datetime time;
+   bool     is_high;
+};
+
+struct BreakInfo
+{
+   string   label;
+   color    clr;
+   double   level;
+   datetime level_time;
+   datetime break_time;
+};
+
+//+------------------------------------------------------------------+
 //| GLOBAL VARIABLES                                                  |
 //+------------------------------------------------------------------+
 datetime g_last_bar = 0;
 int g_obj_count = 0;
+
+SwingInfo g_allSwings[];
+BreakInfo g_allBreaks[];
 
 //+------------------------------------------------------------------+
 //| Custom indicator initialization function                          |
@@ -34,7 +65,9 @@ int g_obj_count = 0;
 int OnInit()
 {
    Print("═══════════════════════════════════════════════════");
-   Print("   SMC INDICATOR v1.0");
+   Print("   SMC INDICATOR v2.0 - SHOW ONLY LATEST");
+   Print("   Show_Only_Latest: ", Show_Only_Latest);
+   Print("   Latest_Count: ", Latest_Count);
    Print("═══════════════════════════════════════════════════");
    
    ObjectsDeleteAll(0, "SMC_");
@@ -80,8 +113,11 @@ int OnCalculate(const int rates_total,
 //+------------------------------------------------------------------+
 void AnalyzeAndDraw()
 {
+   // Clear previous
    ObjectsDeleteAll(0, "SMC_");
    g_obj_count = 0;
+   ArrayResize(g_allSwings, 0);
+   ArrayResize(g_allBreaks, 0);
    
    double prevHigh = 0, prevLow = 0;
    datetime prevHighTime = 0, prevLowTime = 0;
@@ -143,12 +179,12 @@ void AnalyzeAndDraw()
                   if(isBearish && chochLevelBear > 0)
                   {
                      // CHoCH Bullish!
-                     DrawBreak("CHoCH", Color_CHoCH, chochLevelBear, chochLevelBearTime, i);
+                     AddBreak("CHoCH", Color_CHoCH, chochLevelBear, chochLevelBearTime, i);
                   }
                   else if(!isBullish)
                   {
                      // BOS Bullish
-                     DrawBreak("BOS", Color_BOS, prevHigh, prevHighTime, i);
+                     AddBreak("BOS", Color_BOS, prevHigh, prevHighTime, i);
                   }
                   
                   isBullish = true;
@@ -175,9 +211,9 @@ void AnalyzeAndDraw()
             clr = clrGray;
          }
          
-         // Draw swing point
+         // Store swing
          if(label != "")
-            DrawSwing(label, clr, high, time, true);
+            AddSwing(label, clr, high, time, true);
          
          prevHigh = high;
          prevHighTime = time;
@@ -205,12 +241,12 @@ void AnalyzeAndDraw()
                   if(isBullish && chochLevelBull > 0)
                   {
                      // CHoCH Bearish!
-                     DrawBreak("CHoCH", Color_CHoCH, chochLevelBull, chochLevelBullTime, i);
+                     AddBreak("CHoCH", Color_CHoCH, chochLevelBull, chochLevelBullTime, i);
                   }
                   else if(!isBearish)
                   {
                      // BOS Bearish
-                     DrawBreak("BOS", Color_BOS, prevLow, prevLowTime, i);
+                     AddBreak("BOS", Color_BOS, prevLow, prevLowTime, i);
                   }
                   
                   isBearish = true;
@@ -237,9 +273,9 @@ void AnalyzeAndDraw()
             clr = clrGray;
          }
          
-         // Draw swing point
+         // Store swing
          if(label != "")
-            DrawSwing(label, clr, low, time, false);
+            AddSwing(label, clr, low, time, false);
          
          prevLow = low;
          prevLowTime = time;
@@ -248,8 +284,78 @@ void AnalyzeAndDraw()
       }
    }
    
+   // NOW DRAW - Only Latest if enabled!
+   DrawAllConcepts();
+   
    ChartRedraw(0);
-   Print("Objects drawn: ", g_obj_count);
+   Print("Total Swings: ", ArraySize(g_allSwings), " | Total Breaks: ", ArraySize(g_allBreaks), " | Objects Drawn: ", g_obj_count);
+}
+
+//+------------------------------------------------------------------+
+//| Add swing to array                                                |
+//+------------------------------------------------------------------+
+void AddSwing(string label, color clr, double price, datetime time, bool is_high)
+{
+   int size = ArraySize(g_allSwings);
+   ArrayResize(g_allSwings, size + 1);
+   
+   g_allSwings[size].label = label;
+   g_allSwings[size].clr = clr;
+   g_allSwings[size].price = price;
+   g_allSwings[size].time = time;
+   g_allSwings[size].is_high = is_high;
+}
+
+//+------------------------------------------------------------------+
+//| Add break to array                                                |
+//+------------------------------------------------------------------+
+void AddBreak(string label, color clr, double level, datetime level_time, int break_bar)
+{
+   int size = ArraySize(g_allBreaks);
+   ArrayResize(g_allBreaks, size + 1);
+   
+   g_allBreaks[size].label = label;
+   g_allBreaks[size].clr = clr;
+   g_allBreaks[size].level = level;
+   g_allBreaks[size].level_time = level_time;
+   g_allBreaks[size].break_time = iTime(_Symbol, PERIOD_CURRENT, break_bar);
+}
+
+//+------------------------------------------------------------------+
+//| Draw All Concepts - Apply Show_Only_Latest filter                 |
+//+------------------------------------------------------------------+
+void DrawAllConcepts()
+{
+   int totalSwings = ArraySize(g_allSwings);
+   int totalBreaks = ArraySize(g_allBreaks);
+   
+   // Determine how many to draw
+   int swingsToShow = totalSwings;
+   int breaksToShow = totalBreaks;
+   
+   if(Show_Only_Latest)
+   {
+      swingsToShow = MathMin(Latest_Count, totalSwings);
+      breaksToShow = MathMin(Latest_Count, totalBreaks);
+   }
+   
+   // Draw LATEST swings (from end of array = newest)
+   int swingStart = totalSwings - swingsToShow;
+   for(int i = swingStart; i < totalSwings; i++)
+   {
+      DrawSwing(g_allSwings[i].label, g_allSwings[i].clr, g_allSwings[i].price, 
+                g_allSwings[i].time, g_allSwings[i].is_high);
+   }
+   
+   // Draw LATEST breaks (from end of array = newest)
+   int breakStart = totalBreaks - breaksToShow;
+   for(int i = breakStart; i < totalBreaks; i++)
+   {
+      DrawBreak(g_allBreaks[i].label, g_allBreaks[i].clr, g_allBreaks[i].level,
+                g_allBreaks[i].level_time, g_allBreaks[i].break_time);
+   }
+   
+   Print("Showing: ", swingsToShow, " swings, ", breaksToShow, " breaks (Show_Only_Latest=", Show_Only_Latest, ")");
 }
 
 //+------------------------------------------------------------------+
@@ -287,53 +393,61 @@ void DrawSwing(string label, color clr, double price, datetime time, bool is_hig
    
    // Arrow
    string arr_name = "SMC_A_" + IntegerToString(g_obj_count);
-   ObjectCreate(0, arr_name, OBJ_ARROW, 0, time, price);
-   ObjectSetInteger(0, arr_name, OBJPROP_ARROWCODE, arrow);
-   ObjectSetInteger(0, arr_name, OBJPROP_COLOR, clr);
-   ObjectSetInteger(0, arr_name, OBJPROP_WIDTH, 2);
+   if(ObjectCreate(0, arr_name, OBJ_ARROW, 0, time, price))
+   {
+      ObjectSetInteger(0, arr_name, OBJPROP_ARROWCODE, arrow);
+      ObjectSetInteger(0, arr_name, OBJPROP_COLOR, clr);
+      ObjectSetInteger(0, arr_name, OBJPROP_WIDTH, 2);
+   }
    
    // Label
    string lbl_name = "SMC_L_" + IntegerToString(g_obj_count);
-   ObjectCreate(0, lbl_name, OBJ_TEXT, 0, time, price + offset);
-   ObjectSetString(0, lbl_name, OBJPROP_TEXT, label);
-   ObjectSetInteger(0, lbl_name, OBJPROP_COLOR, clr);
-   ObjectSetInteger(0, lbl_name, OBJPROP_FONTSIZE, 10);
-   ObjectSetString(0, lbl_name, OBJPROP_FONT, "Arial Bold");
+   if(ObjectCreate(0, lbl_name, OBJ_TEXT, 0, time, price + offset))
+   {
+      ObjectSetString(0, lbl_name, OBJPROP_TEXT, label);
+      ObjectSetInteger(0, lbl_name, OBJPROP_COLOR, clr);
+      ObjectSetInteger(0, lbl_name, OBJPROP_FONTSIZE, 10);
+      ObjectSetString(0, lbl_name, OBJPROP_FONT, "Arial Bold");
+   }
    
    // Horizontal line
    string line_name = "SMC_H_" + IntegerToString(g_obj_count);
    datetime end_time = iTime(_Symbol, PERIOD_CURRENT, 0);
-   ObjectCreate(0, line_name, OBJ_TREND, 0, time, price, end_time, price);
-   ObjectSetInteger(0, line_name, OBJPROP_COLOR, clr);
-   ObjectSetInteger(0, line_name, OBJPROP_STYLE, STYLE_DOT);
-   ObjectSetInteger(0, line_name, OBJPROP_WIDTH, 1);
-   ObjectSetInteger(0, line_name, OBJPROP_RAY_RIGHT, false);
-   ObjectSetInteger(0, line_name, OBJPROP_BACK, true);
+   if(ObjectCreate(0, line_name, OBJ_TREND, 0, time, price, end_time, price))
+   {
+      ObjectSetInteger(0, line_name, OBJPROP_COLOR, clr);
+      ObjectSetInteger(0, line_name, OBJPROP_STYLE, STYLE_DOT);
+      ObjectSetInteger(0, line_name, OBJPROP_WIDTH, 1);
+      ObjectSetInteger(0, line_name, OBJPROP_RAY_RIGHT, false);
+      ObjectSetInteger(0, line_name, OBJPROP_BACK, true);
+   }
 }
 
 //+------------------------------------------------------------------+
 //| Draw Break (BOS/CHoCH)                                            |
 //+------------------------------------------------------------------+
-void DrawBreak(string label, color clr, double level, datetime level_time, int break_bar)
+void DrawBreak(string label, color clr, double level, datetime level_time, datetime break_time)
 {
    g_obj_count++;
    
-   datetime break_time = iTime(_Symbol, PERIOD_CURRENT, break_bar);
-   
    // Line
    string line_name = "SMC_B_" + IntegerToString(g_obj_count);
-   ObjectCreate(0, line_name, OBJ_TREND, 0, level_time, level, break_time, level);
-   ObjectSetInteger(0, line_name, OBJPROP_COLOR, clr);
-   ObjectSetInteger(0, line_name, OBJPROP_STYLE, STYLE_DASH);
-   ObjectSetInteger(0, line_name, OBJPROP_WIDTH, 2);
-   ObjectSetInteger(0, line_name, OBJPROP_RAY_RIGHT, false);
+   if(ObjectCreate(0, line_name, OBJ_TREND, 0, level_time, level, break_time, level))
+   {
+      ObjectSetInteger(0, line_name, OBJPROP_COLOR, clr);
+      ObjectSetInteger(0, line_name, OBJPROP_STYLE, STYLE_DASH);
+      ObjectSetInteger(0, line_name, OBJPROP_WIDTH, 2);
+      ObjectSetInteger(0, line_name, OBJPROP_RAY_RIGHT, false);
+   }
    
    // Label
    string lbl_name = "SMC_BL_" + IntegerToString(g_obj_count);
-   ObjectCreate(0, lbl_name, OBJ_TEXT, 0, break_time, level);
-   ObjectSetString(0, lbl_name, OBJPROP_TEXT, label);
-   ObjectSetInteger(0, lbl_name, OBJPROP_COLOR, clr);
-   ObjectSetInteger(0, lbl_name, OBJPROP_FONTSIZE, 12);
-   ObjectSetString(0, lbl_name, OBJPROP_FONT, "Arial Bold");
+   if(ObjectCreate(0, lbl_name, OBJ_TEXT, 0, break_time, level))
+   {
+      ObjectSetString(0, lbl_name, OBJPROP_TEXT, label);
+      ObjectSetInteger(0, lbl_name, OBJPROP_COLOR, clr);
+      ObjectSetInteger(0, lbl_name, OBJPROP_FONTSIZE, 12);
+      ObjectSetString(0, lbl_name, OBJPROP_FONT, "Arial Bold");
+   }
 }
 //+------------------------------------------------------------------+
