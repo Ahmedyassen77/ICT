@@ -395,7 +395,7 @@ void BuildStructure()
             // Check for close above previous high between prev_high and current
             int break_bar = FindBreakBarByClose(current.bar_index, prev_high.time, prev_high.price, true);
             
-            if(break_bar > 0)
+            if(break_bar >= 0)
             {
                // ═══ BULLISH BOS ═══
                // Price closed above previous high = trend continuation
@@ -412,7 +412,7 @@ void BuildStructure()
                      int choch_bar = FindBreakBarByClose(current.bar_index, 
                                                           swing_that_caused_last_bearish_bos.time,
                                                           swing_that_caused_last_bearish_bos.price, true);
-                     if(choch_bar > 0)
+                     if(choch_bar >= 0)
                      {
                         StructureBreak brk;
                         brk.type = BREAK_CHOCH_BULL;
@@ -514,7 +514,7 @@ void BuildStructure()
             // Check for close below previous low
             int break_bar = FindBreakBarByClose(current.bar_index, prev_low.time, prev_low.price, false);
             
-            if(break_bar > 0)
+            if(break_bar >= 0)
             {
                // ═══ BEARISH BOS ═══
                
@@ -530,7 +530,7 @@ void BuildStructure()
                      int choch_bar = FindBreakBarByClose(current.bar_index,
                                                           swing_that_caused_last_bullish_bos.time,
                                                           swing_that_caused_last_bullish_bos.price, false);
-                     if(choch_bar > 0)
+                     if(choch_bar >= 0)
                      {
                         StructureBreak brk;
                         brk.type = BREAK_CHOCH_BEAR;
@@ -635,7 +635,7 @@ void BuildStructure()
 
 //+------------------------------------------------------------------+
 //| Find bar where CLOSE price breaks a level                         |
-//| Returns bar index if found, 0 if not                              |
+//| Returns bar index if found, -1 if not                             |
 //+------------------------------------------------------------------+
 int FindBreakBarByClose(int swing_bar, datetime level_time, double level_price, bool break_above)
 {
@@ -655,7 +655,7 @@ int FindBreakBarByClose(int swing_bar, datetime level_time, double level_price, 
          return bar;
    }
    
-   return 0;
+   return -1;  // Changed from 0 to -1 to distinguish from bar 0
 }
 
 //+------------------------------------------------------------------+
