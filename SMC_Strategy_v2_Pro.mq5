@@ -1,11 +1,11 @@
 //+------------------------------------------------------------------+
 //|                                         SMC_Strategy_v2_Pro.mq5 |
 //|                         Smart Money Concepts Trading Strategy    |
-//|                                    Version 3.0 - Correct CHoCH   |
+//|                                    Version 4.0 - Correct CHoCH   |
 //+------------------------------------------------------------------+
-#property copyright "SMC Strategy v3.0"
+#property copyright "SMC Strategy v4.0"
 #property link      "https://github.com/Ahmedyassen77/ICT"
-#property version   "3.00"
+#property version   "4.00"
 #property strict
 
 //+------------------------------------------------------------------+
@@ -13,7 +13,6 @@
 //+------------------------------------------------------------------+
 #include <Trade\Trade.mqh>
 #include <Trade\PositionInfo.mqh>
-#include <Trade\OrderInfo.mqh>
 
 //+------------------------------------------------------------------+
 //| ENUMS                                                             |
@@ -27,56 +26,45 @@ enum ENUM_TREND_STATE
 
 enum ENUM_SWING_TYPE
 {
-   SWING_HH,             // Higher High (structural)
-   SWING_HL,             // Higher Low (structural)
-   SWING_LH,             // Lower High (structural)
-   SWING_LL,             // Lower Low (structural)
-   SWING_INTERNAL_HIGH,  // Internal High (not structural)
-   SWING_INTERNAL_LOW,   // Internal Low (not structural)
-   SWING_UNKNOWN         // Unknown
+   SWING_HH,             // Higher High
+   SWING_HL,             // Higher Low
+   SWING_LH,             // Lower High
+   SWING_LL,             // Lower Low
+   SWING_HIGH,           // Unclassified High
+   SWING_LOW             // Unclassified Low
 };
 
 enum ENUM_BREAK_TYPE
 {
    BREAK_NONE,           // No Break
-   BREAK_BOS_BULL,       // BOS Bullish (continuation)
-   BREAK_BOS_BEAR,       // BOS Bearish (continuation)
-   BREAK_CHOCH_BULL,     // CHoCH Bullish (reversal from bearish)
-   BREAK_CHOCH_BEAR      // CHoCH Bearish (reversal from bullish)
+   BREAK_BOS_BULL,       // BOS Bullish (continuation - broke previous high)
+   BREAK_BOS_BEAR,       // BOS Bearish (continuation - broke previous low)
+   BREAK_CHOCH_BULL,     // CHoCH Bullish (reversal - broke the LH that created last LL)
+   BREAK_CHOCH_BEAR      // CHoCH Bearish (reversal - broke the HL that created last HH)
 };
 
 //+------------------------------------------------------------------+
 //| STRUCTURES                                                        |
 //+------------------------------------------------------------------+
-// Raw Swing Point (before classification)
-struct RawSwing
+struct SwingPoint
 {
-   double         price;
-   datetime       time;
-   int            bar_index;
-   bool           is_high;      // true = swing high, false = swing low
+   double            price;
+   datetime          time;
+   int               bar_index;
+   bool              is_high;
+   ENUM_SWING_TYPE   swing_type;
+   bool              is_valid;        // Is this swing still valid (not broken)?
+   bool              caused_bos;      // Did this swing cause a BOS?
 };
 
-// Structural Swing Point (after classification)
-struct StructuralSwing
-{
-   double         price;
-   datetime       time;
-   int            bar_index;
-   bool           is_high;
-   ENUM_SWING_TYPE swing_type;  // HH, HL, LH, LL or Internal
-   bool           is_structural; // true = structural, false = internal
-   string         label;
-};
-
-// Structure Break (BOS / CHoCH)
 struct StructureBreak
 {
-   ENUM_BREAK_TYPE type;
-   double         break_level;     // The level that was broken
-   double         break_price;     // The close price that broke it
-   datetime       break_time;
-   int            break_bar;
+   ENUM_BREAK_TYPE   type;
+   double            break_level;     // The level that was broken
+   double            break_price;     // The close price that broke it
+   datetime          break_time;
+   int               break_bar;
+   datetime          level_time;      // Time of the level that was broken
 };
 
 //+------------------------------------------------------------------+
@@ -84,7 +72,6 @@ struct StructureBreak
 //+------------------------------------------------------------------+
 input group "═══════════ General Settings ═══════════"
 input int      Magic_Number = 12345;              // Magic Number
-input string   EA_Comment = "SMC_v3";             // Trade Comment
 
 input group "═══════════ Swing Detection ═══════════"
 input int      Swing_Period = 5;                  // Swing Period (bars each side)
@@ -92,8 +79,7 @@ input int      Lookback_Bars = 200;               // Lookback Bars for Analysis
 
 input group "═══════════ Visual Settings ═══════════"
 input bool     Show_Info_Panel = true;            // Show Info Panel
-input bool     Show_Structural_Swings = true;     // Show Structural HH/HL/LH/LL
-input bool     Show_Internal_Swings = false;      // Show Internal Swings (non-structural)
+input bool     Show_Swing_Points = true;          // Show Swing Points (HH/HL/LH/LL)
 input bool     Show_Structure_Lines = true;       // Show Structure Lines
 input bool     Show_Break_Labels = true;          // Show BOS/CHoCH Labels
 input bool     Show_Only_Latest = true;           // Show Only Latest (clean chart)
@@ -108,41 +94,34 @@ input color    Color_BOS_Bull = clrDodgerBlue;    // BOS Bullish Color
 input color    Color_BOS_Bear = clrOrangeRed;     // BOS Bearish Color
 input color    Color_CHoCH_Bull = clrLime;        // CHoCH Bullish Color
 input color    Color_CHoCH_Bear = clrRed;         // CHoCH Bearish Color
-input color    Color_Internal = clrGray;          // Internal Swing Color
 
 //+------------------------------------------------------------------+
 //| GLOBAL VARIABLES                                                  |
 //+------------------------------------------------------------------+
-CTrade         trade;
+CTrade trade;
 
 // Current Trend State
 ENUM_TREND_STATE g_trendState = TREND_NEUTRAL;
 
-// Last Structural Points (KEY VARIABLES!)
-double   g_lastStructuralHigh = 0;        // آخر قمة هيكلية حقيقية
-datetime g_lastStructuralHighTime = 0;
-int      g_lastStructuralHighBar = 0;
-
-double   g_lastStructuralLow = 0;         // آخر قاع هيكلي حقيقي
-datetime g_lastStructuralLowTime = 0;
-int      g_lastStructuralLowBar = 0;
-
-// For Bullish Trend
-double   g_lastBullishStructuralHigh = 0; // آخر HH في الاتجاه الصاعد
-datetime g_lastBullishStructuralHighTime = 0;
-double   g_lastBullishStructuralLow = 0;  // آخر HL في الاتجاه الصاعد
-datetime g_lastBullishStructuralLowTime = 0;
-
-// For Bearish Trend
-double   g_lastBearishStructuralHigh = 0; // آخر LH في الاتجاه الهابط
-datetime g_lastBearishStructuralHighTime = 0;
-double   g_lastBearishStructuralLow = 0;  // آخر LL في الاتجاه الهابط
-datetime g_lastBearishStructuralLowTime = 0;
-
 // Arrays
-RawSwing g_rawSwings[];                   // All detected raw swings
-StructuralSwing g_structuralSwings[];     // Classified structural swings
-StructureBreak g_breaks[];                // All BOS/CHoCH breaks
+SwingPoint g_swings[];              // All swing points (ordered oldest to newest during processing)
+StructureBreak g_breaks[];          // All BOS/CHoCH breaks
+
+// Key structural points for CHoCH detection
+// In Bullish: The HL that pushed price to make the last HH
+// In Bearish: The LH that pushed price to make the last LL
+SwingPoint g_choch_level_bull;      // The HL to watch for bearish CHoCH
+SwingPoint g_choch_level_bear;      // The LH to watch for bullish CHoCH
+
+// Last structural points
+double g_lastHH = 0;
+datetime g_lastHH_time = 0;
+double g_lastHL = 0;
+datetime g_lastHL_time = 0;
+double g_lastLH = 0;
+datetime g_lastLH_time = 0;
+double g_lastLL = 0;
+datetime g_lastLL_time = 0;
 
 // Last bar time
 datetime g_last_bar_time = 0;
@@ -153,60 +132,47 @@ datetime g_last_bar_time = 0;
 int OnInit()
 {
    Print("══════════════════════════════════════════════════════════");
-   Print("   SMC Strategy v3.0 - CORRECT CHoCH LOGIC");
+   Print("   SMC Strategy v4.0 - CORRECT CHoCH LOGIC");
+   Print("   CHoCH = Break of the swing that CAUSED the last BOS");
    Print("══════════════════════════════════════════════════════════");
    
    trade.SetExpertMagicNumber(Magic_Number);
    
-   // Initialize arrays
-   ArrayResize(g_rawSwings, 0);
-   ArrayResize(g_structuralSwings, 0);
+   ArrayResize(g_swings, 0);
    ArrayResize(g_breaks, 0);
    
-   // Reset structural variables
-   ResetStructuralVariables();
+   ResetAll();
    
-   // Delete old objects
    ObjectsDeleteAll(0, "SMC_");
    
-   // Initial analysis
    FullMarketAnalysis();
    
-   // Draw info panel
    if(Show_Info_Panel)
       DrawInfoPanel();
-   
-   Print("   Symbol: ", _Symbol);
-   Print("   Timeframe: ", EnumToString((ENUM_TIMEFRAMES)Period()));
-   Print("══════════════════════════════════════════════════════════");
    
    return(INIT_SUCCEEDED);
 }
 
 //+------------------------------------------------------------------+
-//| Reset Structural Variables                                        |
+//| Reset All Variables                                               |
 //+------------------------------------------------------------------+
-void ResetStructuralVariables()
+void ResetAll()
 {
    g_trendState = TREND_NEUTRAL;
    
-   g_lastStructuralHigh = 0;
-   g_lastStructuralHighTime = 0;
-   g_lastStructuralHighBar = 0;
+   g_lastHH = 0; g_lastHH_time = 0;
+   g_lastHL = 0; g_lastHL_time = 0;
+   g_lastLH = 0; g_lastLH_time = 0;
+   g_lastLL = 0; g_lastLL_time = 0;
    
-   g_lastStructuralLow = 0;
-   g_lastStructuralLowTime = 0;
-   g_lastStructuralLowBar = 0;
+   // Reset CHoCH levels
+   g_choch_level_bull.price = 0;
+   g_choch_level_bull.time = 0;
+   g_choch_level_bull.is_valid = false;
    
-   g_lastBullishStructuralHigh = 0;
-   g_lastBullishStructuralHighTime = 0;
-   g_lastBullishStructuralLow = 0;
-   g_lastBullishStructuralLowTime = 0;
-   
-   g_lastBearishStructuralHigh = 0;
-   g_lastBearishStructuralHighTime = 0;
-   g_lastBearishStructuralLow = 0;
-   g_lastBearishStructuralLowTime = 0;
+   g_choch_level_bear.price = 0;
+   g_choch_level_bear.time = 0;
+   g_choch_level_bear.is_valid = false;
 }
 
 //+------------------------------------------------------------------+
@@ -216,7 +182,7 @@ void OnDeinit(const int reason)
 {
    if(MQLInfoInteger(MQL_TESTER))
    {
-      Print("Backtest ended - Objects KEPT on chart!");
+      Print("Backtest ended - Objects preserved!");
       return;
    }
    
@@ -267,56 +233,61 @@ bool IsNewBar()
 void FullMarketAnalysis()
 {
    // Step 1: Find all raw swing points
-   FindRawSwings();
+   FindSwingPoints();
    
-   // Step 2: Classify swings and build structure (THE KEY FUNCTION!)
-   ClassifyAndBuildStructure();
+   // Step 2: Build structure and detect breaks
+   BuildStructure();
    
    // Step 3: Draw everything
    DrawAllVisuals();
 }
 
 //+------------------------------------------------------------------+
-//| Step 1: Find Raw Swing Points                                     |
+//| Find Swing Points                                                 |
 //+------------------------------------------------------------------+
-void FindRawSwings()
+void FindSwingPoints()
 {
-   ArrayResize(g_rawSwings, 0);
+   ArrayResize(g_swings, 0);
    
-   // We need Swing_Period bars on each side
    for(int i = Swing_Period; i < Lookback_Bars - Swing_Period; i++)
    {
       // Check for Swing High
       if(IsSwingHigh(i))
       {
-         RawSwing sw;
-         sw.price = iHigh(_Symbol, PERIOD_CURRENT, i);
-         sw.time = iTime(_Symbol, PERIOD_CURRENT, i);
-         sw.bar_index = i;
-         sw.is_high = true;
+         SwingPoint sp;
+         sp.price = iHigh(_Symbol, PERIOD_CURRENT, i);
+         sp.time = iTime(_Symbol, PERIOD_CURRENT, i);
+         sp.bar_index = i;
+         sp.is_high = true;
+         sp.swing_type = SWING_HIGH;
+         sp.is_valid = true;
+         sp.caused_bos = false;
          
-         int size = ArraySize(g_rawSwings);
-         ArrayResize(g_rawSwings, size + 1);
-         g_rawSwings[size] = sw;
+         int size = ArraySize(g_swings);
+         ArrayResize(g_swings, size + 1);
+         g_swings[size] = sp;
       }
       
       // Check for Swing Low
       if(IsSwingLow(i))
       {
-         RawSwing sw;
-         sw.price = iLow(_Symbol, PERIOD_CURRENT, i);
-         sw.time = iTime(_Symbol, PERIOD_CURRENT, i);
-         sw.bar_index = i;
-         sw.is_high = false;
+         SwingPoint sp;
+         sp.price = iLow(_Symbol, PERIOD_CURRENT, i);
+         sp.time = iTime(_Symbol, PERIOD_CURRENT, i);
+         sp.bar_index = i;
+         sp.is_high = false;
+         sp.swing_type = SWING_LOW;
+         sp.is_valid = true;
+         sp.caused_bos = false;
          
-         int size = ArraySize(g_rawSwings);
-         ArrayResize(g_rawSwings, size + 1);
-         g_rawSwings[size] = sw;
+         int size = ArraySize(g_swings);
+         ArrayResize(g_swings, size + 1);
+         g_swings[size] = sp;
       }
    }
    
-   // Sort by bar_index descending (oldest first for processing)
-   SortRawSwingsByBarDesc();
+   // Sort by bar_index descending (oldest first = highest bar_index first)
+   SortSwingsOldestFirst();
 }
 
 //+------------------------------------------------------------------+
@@ -326,22 +297,13 @@ bool IsSwingHigh(int index)
 {
    if(index < Swing_Period) return false;
    
-   double high_value = iHigh(_Symbol, PERIOD_CURRENT, index);
+   double high = iHigh(_Symbol, PERIOD_CURRENT, index);
    
-   // Check left side (more recent bars - lower index)
    for(int i = 1; i <= Swing_Period; i++)
    {
-      if(iHigh(_Symbol, PERIOD_CURRENT, index - i) >= high_value)
-         return false;
-   }
-   
-   // Check right side (older bars - higher index)
-   for(int i = 1; i <= Swing_Period; i++)
-   {
-      if(index + i >= Bars(_Symbol, PERIOD_CURRENT))
-         return false;
-      if(iHigh(_Symbol, PERIOD_CURRENT, index + i) >= high_value)
-         return false;
+      if(iHigh(_Symbol, PERIOD_CURRENT, index - i) >= high) return false;
+      if(index + i >= Bars(_Symbol, PERIOD_CURRENT)) return false;
+      if(iHigh(_Symbol, PERIOD_CURRENT, index + i) >= high) return false;
    }
    
    return true;
@@ -354,491 +316,372 @@ bool IsSwingLow(int index)
 {
    if(index < Swing_Period) return false;
    
-   double low_value = iLow(_Symbol, PERIOD_CURRENT, index);
+   double low = iLow(_Symbol, PERIOD_CURRENT, index);
    
-   // Check left side
    for(int i = 1; i <= Swing_Period; i++)
    {
-      if(iLow(_Symbol, PERIOD_CURRENT, index - i) <= low_value)
-         return false;
-   }
-   
-   // Check right side
-   for(int i = 1; i <= Swing_Period; i++)
-   {
-      if(index + i >= Bars(_Symbol, PERIOD_CURRENT))
-         return false;
-      if(iLow(_Symbol, PERIOD_CURRENT, index + i) <= low_value)
-         return false;
+      if(iLow(_Symbol, PERIOD_CURRENT, index - i) <= low) return false;
+      if(index + i >= Bars(_Symbol, PERIOD_CURRENT)) return false;
+      if(iLow(_Symbol, PERIOD_CURRENT, index + i) <= low) return false;
    }
    
    return true;
 }
 
 //+------------------------------------------------------------------+
-//| Sort Raw Swings by bar_index (descending = oldest first)          |
+//| Sort swings oldest first (highest bar_index first)                |
 //+------------------------------------------------------------------+
-void SortRawSwingsByBarDesc()
+void SortSwingsOldestFirst()
 {
-   int total = ArraySize(g_rawSwings);
+   int total = ArraySize(g_swings);
    for(int i = 0; i < total - 1; i++)
    {
       for(int j = i + 1; j < total; j++)
       {
-         // Larger bar_index = older bar, should come first
-         if(g_rawSwings[j].bar_index > g_rawSwings[i].bar_index)
+         if(g_swings[j].bar_index > g_swings[i].bar_index)
          {
-            RawSwing temp = g_rawSwings[i];
-            g_rawSwings[i] = g_rawSwings[j];
-            g_rawSwings[j] = temp;
+            SwingPoint temp = g_swings[i];
+            g_swings[i] = g_swings[j];
+            g_swings[j] = temp;
          }
       }
    }
 }
 
 //+------------------------------------------------------------------+
-//| Step 2: CLASSIFY AND BUILD STRUCTURE (THE CORE LOGIC!)            |
+//| BUILD STRUCTURE - THE CORE LOGIC                                  |
+//| CHoCH = Breaking the swing that CAUSED the last BOS               |
 //+------------------------------------------------------------------+
-void ClassifyAndBuildStructure()
+void BuildStructure()
 {
-   ArrayResize(g_structuralSwings, 0);
    ArrayResize(g_breaks, 0);
-   ResetStructuralVariables();
+   ResetAll();
    
-   int total_raw = ArraySize(g_rawSwings);
-   if(total_raw < 4) return;
+   int total = ArraySize(g_swings);
+   if(total < 3) return;
    
-   // Process swings from OLDEST to NEWEST
-   // g_rawSwings is sorted with oldest first (highest bar_index first)
+   // Track the swing that caused the last BOS
+   SwingPoint swing_that_caused_last_bullish_bos;  // The HL before last HH
+   SwingPoint swing_that_caused_last_bearish_bos;  // The LH before last LL
+   swing_that_caused_last_bullish_bos.price = 0;
+   swing_that_caused_last_bearish_bos.price = 0;
    
-   for(int i = 0; i < total_raw; i++)
+   // Previous swing for comparison
+   SwingPoint prev_high;
+   SwingPoint prev_low;
+   prev_high.price = 0;
+   prev_low.price = 0;
+   
+   // The swing immediately before current (to track what caused BOS)
+   SwingPoint last_low_before_high;
+   SwingPoint last_high_before_low;
+   last_low_before_high.price = 0;
+   last_high_before_low.price = 0;
+   
+   // Process swings from oldest to newest
+   for(int i = 0; i < total; i++)
    {
-      RawSwing raw = g_rawSwings[i];
+      SwingPoint current = g_swings[i];
       
-      // Create structural swing entry
-      StructuralSwing ss;
-      ss.price = raw.price;
-      ss.time = raw.time;
-      ss.bar_index = raw.bar_index;
-      ss.is_high = raw.is_high;
-      ss.is_structural = false;  // Default: not structural
-      ss.swing_type = raw.is_high ? SWING_INTERNAL_HIGH : SWING_INTERNAL_LOW;
-      ss.label = "";
-      
-      if(raw.is_high)
+      if(current.is_high)
       {
          // ═══════════════════════════════════════════════════════════
-         // PROCESSING A SWING HIGH
+         // PROCESSING A HIGH
          // ═══════════════════════════════════════════════════════════
          
-         // First check: Is this breaking a bearish structural high? (CHoCH Bull)
-         if(g_trendState == TREND_BEARISH && g_lastBearishStructuralHigh > 0)
+         // First, check if this high breaks above previous high (potential BOS Bull)
+         if(prev_high.price > 0)
          {
-            // Check if any bar between last structural point and this swing
-            // closed ABOVE the last bearish structural high
-            int check_bar = FindBreakBar(raw.bar_index, g_lastBearishStructuralHighTime, 
-                                         g_lastBearishStructuralHigh, true);
+            // Check for close above previous high between prev_high and current
+            int break_bar = FindBreakBarByClose(current.bar_index, prev_high.time, prev_high.price, true);
             
-            if(check_bar > 0)
+            if(break_bar > 0)
             {
-               // CHoCH BULLISH! Price closed above last LH
-               StructureBreak brk;
-               brk.type = BREAK_CHOCH_BULL;
-               brk.break_level = g_lastBearishStructuralHigh;
-               brk.break_price = iClose(_Symbol, PERIOD_CURRENT, check_bar);
-               brk.break_time = iTime(_Symbol, PERIOD_CURRENT, check_bar);
-               brk.break_bar = check_bar;
+               // ═══ BULLISH BOS ═══
+               // Price closed above previous high = trend continuation
                
-               int brk_size = ArraySize(g_breaks);
-               ArrayResize(g_breaks, brk_size + 1);
-               g_breaks[brk_size] = brk;
-               
-               // Change trend to BULLISH
-               g_trendState = TREND_BULLISH;
-               
-               // This high becomes the first HH of new bullish trend
-               ss.is_structural = true;
-               ss.swing_type = SWING_HH;
-               ss.label = "HH";
-               
-               g_lastBullishStructuralHigh = raw.price;
-               g_lastBullishStructuralHighTime = raw.time;
-               g_lastStructuralHigh = raw.price;
-               g_lastStructuralHighTime = raw.time;
-               g_lastStructuralHighBar = raw.bar_index;
-            }
-         }
-         
-         // If we're in BULLISH trend
-         if(g_trendState == TREND_BULLISH && !ss.is_structural)
-         {
-            // Is this high HIGHER than last structural high? → HH (structural)
-            if(raw.price > g_lastBullishStructuralHigh || g_lastBullishStructuralHigh == 0)
-            {
-               ss.is_structural = true;
-               ss.swing_type = SWING_HH;
-               ss.label = "HH";
-               
-               // Check for BOS (breaking previous HH)
-               if(g_lastBullishStructuralHigh > 0)
+               if(g_trendState == TREND_BEARISH)
                {
-                  int check_bar = FindBreakBar(raw.bar_index, g_lastBullishStructuralHighTime,
-                                               g_lastBullishStructuralHigh, true);
-                  if(check_bar > 0)
+                  // ═══ BULLISH CHoCH ═══
+                  // We were bearish, now breaking the last LH = CHoCH!
+                  // But CHoCH should break the LH that caused the last LL
+                  
+                  if(swing_that_caused_last_bearish_bos.price > 0)
                   {
-                     StructureBreak brk;
-                     brk.type = BREAK_BOS_BULL;
-                     brk.break_level = g_lastBullishStructuralHigh;
-                     brk.break_price = iClose(_Symbol, PERIOD_CURRENT, check_bar);
-                     brk.break_time = iTime(_Symbol, PERIOD_CURRENT, check_bar);
-                     brk.break_bar = check_bar;
-                     
-                     int brk_size = ArraySize(g_breaks);
-                     ArrayResize(g_breaks, brk_size + 1);
-                     g_breaks[brk_size] = brk;
+                     // Check if we broke above that specific LH
+                     int choch_bar = FindBreakBarByClose(current.bar_index, 
+                                                          swing_that_caused_last_bearish_bos.time,
+                                                          swing_that_caused_last_bearish_bos.price, true);
+                     if(choch_bar > 0)
+                     {
+                        StructureBreak brk;
+                        brk.type = BREAK_CHOCH_BULL;
+                        brk.break_level = swing_that_caused_last_bearish_bos.price;
+                        brk.break_price = iClose(_Symbol, PERIOD_CURRENT, choch_bar);
+                        brk.break_time = iTime(_Symbol, PERIOD_CURRENT, choch_bar);
+                        brk.break_bar = choch_bar;
+                        brk.level_time = swing_that_caused_last_bearish_bos.time;
+                        
+                        int brk_size = ArraySize(g_breaks);
+                        ArrayResize(g_breaks, brk_size + 1);
+                        g_breaks[brk_size] = brk;
+                        
+                        Print("═══ CHoCH BULLISH @ ", brk.break_level, " ═══");
+                     }
                   }
+                  
+                  g_trendState = TREND_BULLISH;
+               }
+               else
+               {
+                  // Already bullish or neutral - this is BOS
+                  StructureBreak brk;
+                  brk.type = BREAK_BOS_BULL;
+                  brk.break_level = prev_high.price;
+                  brk.break_price = iClose(_Symbol, PERIOD_CURRENT, break_bar);
+                  brk.break_time = iTime(_Symbol, PERIOD_CURRENT, break_bar);
+                  brk.break_bar = break_bar;
+                  brk.level_time = prev_high.time;
+                  
+                  int brk_size = ArraySize(g_breaks);
+                  ArrayResize(g_breaks, brk_size + 1);
+                  g_breaks[brk_size] = brk;
+                  
+                  g_trendState = TREND_BULLISH;
                }
                
-               // Update last structural high
-               g_lastBullishStructuralHigh = raw.price;
-               g_lastBullishStructuralHighTime = raw.time;
-               g_lastStructuralHigh = raw.price;
-               g_lastStructuralHighTime = raw.time;
-               g_lastStructuralHighBar = raw.bar_index;
+               // This is now HH
+               g_swings[i].swing_type = SWING_HH;
+               g_swings[i].caused_bos = true;
+               
+               g_lastHH = current.price;
+               g_lastHH_time = current.time;
+               
+               // ★★★ KEY: Save the LOW that caused this HH for future CHoCH detection ★★★
+               if(last_low_before_high.price > 0)
+               {
+                  swing_that_caused_last_bullish_bos = last_low_before_high;
+                  swing_that_caused_last_bullish_bos.swing_type = SWING_HL;
+                  
+                  // Also update g_lastHL
+                  g_lastHL = last_low_before_high.price;
+                  g_lastHL_time = last_low_before_high.time;
+                  
+                  // Mark that low as HL
+                  for(int k = 0; k < total; k++)
+                  {
+                     if(g_swings[k].time == last_low_before_high.time && !g_swings[k].is_high)
+                     {
+                        g_swings[k].swing_type = SWING_HL;
+                        break;
+                     }
+                  }
+               }
             }
             else
             {
-               // This high is LOWER than last structural high → Internal (not structural)
-               ss.is_structural = false;
-               ss.swing_type = SWING_INTERNAL_HIGH;
-               ss.label = "iH";
+               // No BOS - this is a Lower High (in bearish) or internal high
+               if(current.price < prev_high.price)
+               {
+                  if(g_trendState == TREND_BEARISH || g_trendState == TREND_NEUTRAL)
+                  {
+                     g_swings[i].swing_type = SWING_LH;
+                     g_lastLH = current.price;
+                     g_lastLH_time = current.time;
+                  }
+               }
             }
+         }
+         else
+         {
+            // First high
+            g_swings[i].swing_type = SWING_HIGH;
          }
          
-         // If we're in BEARISH trend
-         if(g_trendState == TREND_BEARISH && !ss.is_structural)
-         {
-            // Is this high LOWER than last structural high? → LH (structural)
-            if(raw.price < g_lastBearishStructuralHigh || g_lastBearishStructuralHigh == 0)
-            {
-               ss.is_structural = true;
-               ss.swing_type = SWING_LH;
-               ss.label = "LH";
-               
-               // Update
-               g_lastBearishStructuralHigh = raw.price;
-               g_lastBearishStructuralHighTime = raw.time;
-               g_lastStructuralHigh = raw.price;
-               g_lastStructuralHighTime = raw.time;
-               g_lastStructuralHighBar = raw.bar_index;
-            }
-            else
-            {
-               // This high is HIGHER than last LH → Internal
-               ss.is_structural = false;
-               ss.swing_type = SWING_INTERNAL_HIGH;
-               ss.label = "iH";
-            }
-         }
-         
-         // If NEUTRAL trend - initialize
-         if(g_trendState == TREND_NEUTRAL && !ss.is_structural)
-         {
-            if(g_lastStructuralHigh == 0)
-            {
-               // First high we see
-               ss.is_structural = true;
-               ss.swing_type = SWING_HH;  // Will be reclassified later
-               ss.label = "H";
-               
-               g_lastStructuralHigh = raw.price;
-               g_lastStructuralHighTime = raw.time;
-               g_lastStructuralHighBar = raw.bar_index;
-            }
-            else if(raw.price > g_lastStructuralHigh)
-            {
-               // Higher high - start bullish
-               ss.is_structural = true;
-               ss.swing_type = SWING_HH;
-               ss.label = "HH";
-               
-               g_trendState = TREND_BULLISH;
-               g_lastBullishStructuralHigh = raw.price;
-               g_lastBullishStructuralHighTime = raw.time;
-               g_lastStructuralHigh = raw.price;
-               g_lastStructuralHighTime = raw.time;
-               g_lastStructuralHighBar = raw.bar_index;
-            }
-            else if(raw.price < g_lastStructuralHigh)
-            {
-               // Lower high - start bearish
-               ss.is_structural = true;
-               ss.swing_type = SWING_LH;
-               ss.label = "LH";
-               
-               g_trendState = TREND_BEARISH;
-               g_lastBearishStructuralHigh = raw.price;
-               g_lastBearishStructuralHighTime = raw.time;
-               g_lastStructuralHigh = raw.price;
-               g_lastStructuralHighTime = raw.time;
-               g_lastStructuralHighBar = raw.bar_index;
-            }
-         }
+         // Update tracking
+         prev_high = g_swings[i];
+         last_high_before_low = g_swings[i];
       }
       else
       {
          // ═══════════════════════════════════════════════════════════
-         // PROCESSING A SWING LOW
+         // PROCESSING A LOW
          // ═══════════════════════════════════════════════════════════
          
-         // First check: Is this breaking a bullish structural low? (CHoCH Bear)
-         if(g_trendState == TREND_BULLISH && g_lastBullishStructuralLow > 0)
+         // First, check if this low breaks below previous low (potential BOS Bear)
+         if(prev_low.price > 0)
          {
-            // Check if any bar closed BELOW the last bullish structural low (HL)
-            int check_bar = FindBreakBar(raw.bar_index, g_lastBullishStructuralLowTime,
-                                         g_lastBullishStructuralLow, false);
+            // Check for close below previous low
+            int break_bar = FindBreakBarByClose(current.bar_index, prev_low.time, prev_low.price, false);
             
-            if(check_bar > 0)
+            if(break_bar > 0)
             {
-               // CHoCH BEARISH! Price closed below last HL
-               StructureBreak brk;
-               brk.type = BREAK_CHOCH_BEAR;
-               brk.break_level = g_lastBullishStructuralLow;
-               brk.break_price = iClose(_Symbol, PERIOD_CURRENT, check_bar);
-               brk.break_time = iTime(_Symbol, PERIOD_CURRENT, check_bar);
-               brk.break_bar = check_bar;
+               // ═══ BEARISH BOS ═══
                
-               int brk_size = ArraySize(g_breaks);
-               ArrayResize(g_breaks, brk_size + 1);
-               g_breaks[brk_size] = brk;
-               
-               // Change trend to BEARISH
-               g_trendState = TREND_BEARISH;
-               
-               // This low becomes the first LL of new bearish trend
-               ss.is_structural = true;
-               ss.swing_type = SWING_LL;
-               ss.label = "LL";
-               
-               g_lastBearishStructuralLow = raw.price;
-               g_lastBearishStructuralLowTime = raw.time;
-               g_lastStructuralLow = raw.price;
-               g_lastStructuralLowTime = raw.time;
-               g_lastStructuralLowBar = raw.bar_index;
-            }
-         }
-         
-         // If we're in BEARISH trend
-         if(g_trendState == TREND_BEARISH && !ss.is_structural)
-         {
-            // Is this low LOWER than last structural low? → LL (structural)
-            if(raw.price < g_lastBearishStructuralLow || g_lastBearishStructuralLow == 0)
-            {
-               ss.is_structural = true;
-               ss.swing_type = SWING_LL;
-               ss.label = "LL";
-               
-               // Check for BOS (breaking previous LL)
-               if(g_lastBearishStructuralLow > 0)
+               if(g_trendState == TREND_BULLISH)
                {
-                  int check_bar = FindBreakBar(raw.bar_index, g_lastBearishStructuralLowTime,
-                                               g_lastBearishStructuralLow, false);
-                  if(check_bar > 0)
+                  // ═══ BEARISH CHoCH ═══
+                  // We were bullish, now breaking the last HL = CHoCH!
+                  // CHoCH should break the HL that caused the last HH
+                  
+                  if(swing_that_caused_last_bullish_bos.price > 0)
                   {
-                     StructureBreak brk;
-                     brk.type = BREAK_BOS_BEAR;
-                     brk.break_level = g_lastBearishStructuralLow;
-                     brk.break_price = iClose(_Symbol, PERIOD_CURRENT, check_bar);
-                     brk.break_time = iTime(_Symbol, PERIOD_CURRENT, check_bar);
-                     brk.break_bar = check_bar;
-                     
-                     int brk_size = ArraySize(g_breaks);
-                     ArrayResize(g_breaks, brk_size + 1);
-                     g_breaks[brk_size] = brk;
+                     // Check if we broke below that specific HL
+                     int choch_bar = FindBreakBarByClose(current.bar_index,
+                                                          swing_that_caused_last_bullish_bos.time,
+                                                          swing_that_caused_last_bullish_bos.price, false);
+                     if(choch_bar > 0)
+                     {
+                        StructureBreak brk;
+                        brk.type = BREAK_CHOCH_BEAR;
+                        brk.break_level = swing_that_caused_last_bullish_bos.price;
+                        brk.break_price = iClose(_Symbol, PERIOD_CURRENT, choch_bar);
+                        brk.break_time = iTime(_Symbol, PERIOD_CURRENT, choch_bar);
+                        brk.break_bar = choch_bar;
+                        brk.level_time = swing_that_caused_last_bullish_bos.time;
+                        
+                        int brk_size = ArraySize(g_breaks);
+                        ArrayResize(g_breaks, brk_size + 1);
+                        g_breaks[brk_size] = brk;
+                        
+                        Print("═══ CHoCH BEARISH @ ", brk.break_level, " ═══");
+                     }
+                  }
+                  
+                  g_trendState = TREND_BEARISH;
+               }
+               else
+               {
+                  // Already bearish or neutral - this is BOS
+                  StructureBreak brk;
+                  brk.type = BREAK_BOS_BEAR;
+                  brk.break_level = prev_low.price;
+                  brk.break_price = iClose(_Symbol, PERIOD_CURRENT, break_bar);
+                  brk.break_time = iTime(_Symbol, PERIOD_CURRENT, break_bar);
+                  brk.break_bar = break_bar;
+                  brk.level_time = prev_low.time;
+                  
+                  int brk_size = ArraySize(g_breaks);
+                  ArrayResize(g_breaks, brk_size + 1);
+                  g_breaks[brk_size] = brk;
+                  
+                  g_trendState = TREND_BEARISH;
+               }
+               
+               // This is now LL
+               g_swings[i].swing_type = SWING_LL;
+               g_swings[i].caused_bos = true;
+               
+               g_lastLL = current.price;
+               g_lastLL_time = current.time;
+               
+               // ★★★ KEY: Save the HIGH that caused this LL for future CHoCH detection ★★★
+               if(last_high_before_low.price > 0)
+               {
+                  swing_that_caused_last_bearish_bos = last_high_before_low;
+                  swing_that_caused_last_bearish_bos.swing_type = SWING_LH;
+                  
+                  // Also update g_lastLH
+                  g_lastLH = last_high_before_low.price;
+                  g_lastLH_time = last_high_before_low.time;
+                  
+                  // Mark that high as LH
+                  for(int k = 0; k < total; k++)
+                  {
+                     if(g_swings[k].time == last_high_before_low.time && g_swings[k].is_high)
+                     {
+                        g_swings[k].swing_type = SWING_LH;
+                        break;
+                     }
                   }
                }
-               
-               // Update
-               g_lastBearishStructuralLow = raw.price;
-               g_lastBearishStructuralLowTime = raw.time;
-               g_lastStructuralLow = raw.price;
-               g_lastStructuralLowTime = raw.time;
-               g_lastStructuralLowBar = raw.bar_index;
             }
             else
             {
-               // This low is HIGHER than last LL → Internal
-               ss.is_structural = false;
-               ss.swing_type = SWING_INTERNAL_LOW;
-               ss.label = "iL";
+               // No BOS - this is a Higher Low (in bullish) or internal low
+               if(current.price > prev_low.price)
+               {
+                  if(g_trendState == TREND_BULLISH || g_trendState == TREND_NEUTRAL)
+                  {
+                     g_swings[i].swing_type = SWING_HL;
+                     g_lastHL = current.price;
+                     g_lastHL_time = current.time;
+                  }
+               }
             }
+         }
+         else
+         {
+            // First low
+            g_swings[i].swing_type = SWING_LOW;
          }
          
-         // If we're in BULLISH trend
-         if(g_trendState == TREND_BULLISH && !ss.is_structural)
-         {
-            // Is this low HIGHER than last structural low? → HL (structural)
-            if(raw.price > g_lastBullishStructuralLow || g_lastBullishStructuralLow == 0)
-            {
-               ss.is_structural = true;
-               ss.swing_type = SWING_HL;
-               ss.label = "HL";
-               
-               // Update
-               g_lastBullishStructuralLow = raw.price;
-               g_lastBullishStructuralLowTime = raw.time;
-               g_lastStructuralLow = raw.price;
-               g_lastStructuralLowTime = raw.time;
-               g_lastStructuralLowBar = raw.bar_index;
-            }
-            else
-            {
-               // This low is LOWER than last HL → Internal
-               ss.is_structural = false;
-               ss.swing_type = SWING_INTERNAL_LOW;
-               ss.label = "iL";
-            }
-         }
-         
-         // If NEUTRAL trend - initialize
-         if(g_trendState == TREND_NEUTRAL && !ss.is_structural)
-         {
-            if(g_lastStructuralLow == 0)
-            {
-               // First low we see
-               ss.is_structural = true;
-               ss.swing_type = SWING_LL;
-               ss.label = "L";
-               
-               g_lastStructuralLow = raw.price;
-               g_lastStructuralLowTime = raw.time;
-               g_lastStructuralLowBar = raw.bar_index;
-            }
-            else if(raw.price < g_lastStructuralLow)
-            {
-               // Lower low - confirm bearish
-               ss.is_structural = true;
-               ss.swing_type = SWING_LL;
-               ss.label = "LL";
-               
-               if(g_trendState == TREND_NEUTRAL)
-               {
-                  g_trendState = TREND_BEARISH;
-                  g_lastBearishStructuralLow = raw.price;
-                  g_lastBearishStructuralLowTime = raw.time;
-               }
-               g_lastStructuralLow = raw.price;
-               g_lastStructuralLowTime = raw.time;
-               g_lastStructuralLowBar = raw.bar_index;
-            }
-            else if(raw.price > g_lastStructuralLow)
-            {
-               // Higher low - confirm bullish
-               ss.is_structural = true;
-               ss.swing_type = SWING_HL;
-               ss.label = "HL";
-               
-               if(g_trendState == TREND_NEUTRAL)
-               {
-                  g_trendState = TREND_BULLISH;
-                  g_lastBullishStructuralLow = raw.price;
-                  g_lastBullishStructuralLowTime = raw.time;
-               }
-               g_lastStructuralLow = raw.price;
-               g_lastStructuralLowTime = raw.time;
-               g_lastStructuralLowBar = raw.bar_index;
-            }
-         }
+         // Update tracking
+         prev_low = g_swings[i];
+         last_low_before_high = g_swings[i];
       }
-      
-      // Add to structural swings array
-      int ss_size = ArraySize(g_structuralSwings);
-      ArrayResize(g_structuralSwings, ss_size + 1);
-      g_structuralSwings[ss_size] = ss;
    }
    
-   // Sort structural swings by bar_index ascending (most recent first)
-   SortStructuralSwingsByBarAsc();
+   // Sort swings by bar_index ascending (most recent first) for drawing
+   SortSwingsNewestFirst();
    
-   // Sort breaks by bar_index ascending (most recent first)
-   SortBreaksByBarAsc();
+   // Sort breaks
+   SortBreaksNewestFirst();
    
    Print("Trend: ", EnumToString(g_trendState), 
-         " | Structural Swings: ", CountStructuralSwings(),
+         " | Swings: ", ArraySize(g_swings),
          " | Breaks: ", ArraySize(g_breaks));
 }
 
 //+------------------------------------------------------------------+
-//| Find the bar where price CLOSED beyond a level                    |
-//| Returns bar index if found, 0 if not found                        |
+//| Find bar where CLOSE price breaks a level                         |
+//| Returns bar index if found, 0 if not                              |
 //+------------------------------------------------------------------+
-int FindBreakBar(int swing_bar, datetime level_time, double level_price, bool break_above)
+int FindBreakBarByClose(int swing_bar, datetime level_time, double level_price, bool break_above)
 {
-   // Search from the level time to the swing bar
    int level_bar = iBarShift(_Symbol, PERIOD_CURRENT, level_time);
    
-   // Search from level_bar towards swing_bar (towards more recent)
+   // Search from level_bar towards swing_bar (more recent)
    for(int bar = level_bar - 1; bar >= swing_bar; bar--)
    {
       if(bar < 0) break;
       
-      double close_price = iClose(_Symbol, PERIOD_CURRENT, bar);
+      double close = iClose(_Symbol, PERIOD_CURRENT, bar);
       
-      if(break_above)
-      {
-         // Looking for close ABOVE level
-         if(close_price > level_price)
-            return bar;
-      }
-      else
-      {
-         // Looking for close BELOW level
-         if(close_price < level_price)
-            return bar;
-      }
+      if(break_above && close > level_price)
+         return bar;
+      
+      if(!break_above && close < level_price)
+         return bar;
    }
    
-   return 0;  // Not found
+   return 0;
 }
 
 //+------------------------------------------------------------------+
-//| Count Structural Swings                                           |
+//| Sort swings newest first (lowest bar_index first)                 |
 //+------------------------------------------------------------------+
-int CountStructuralSwings()
+void SortSwingsNewestFirst()
 {
-   int count = 0;
-   for(int i = 0; i < ArraySize(g_structuralSwings); i++)
-   {
-      if(g_structuralSwings[i].is_structural)
-         count++;
-   }
-   return count;
-}
-
-//+------------------------------------------------------------------+
-//| Sort Structural Swings by bar_index ascending                     |
-//+------------------------------------------------------------------+
-void SortStructuralSwingsByBarAsc()
-{
-   int total = ArraySize(g_structuralSwings);
+   int total = ArraySize(g_swings);
    for(int i = 0; i < total - 1; i++)
    {
       for(int j = i + 1; j < total; j++)
       {
-         if(g_structuralSwings[j].bar_index < g_structuralSwings[i].bar_index)
+         if(g_swings[j].bar_index < g_swings[i].bar_index)
          {
-            StructuralSwing temp = g_structuralSwings[i];
-            g_structuralSwings[i] = g_structuralSwings[j];
-            g_structuralSwings[j] = temp;
+            SwingPoint temp = g_swings[i];
+            g_swings[i] = g_swings[j];
+            g_swings[j] = temp;
          }
       }
    }
 }
 
 //+------------------------------------------------------------------+
-//| Sort Breaks by bar_index ascending                                |
+//| Sort breaks newest first                                          |
 //+------------------------------------------------------------------+
-void SortBreaksByBarAsc()
+void SortBreaksNewestFirst()
 {
    int total = ArraySize(g_breaks);
    for(int i = 0; i < total - 1; i++)
@@ -860,7 +703,7 @@ void SortBreaksByBarAsc()
 //+------------------------------------------------------------------+
 void DrawAllVisuals()
 {
-   // Clear old objects if Show_Only_Latest
+   // Clear old objects
    if(Show_Only_Latest)
    {
       ObjectsDeleteAll(0, "SMC_SW_");
@@ -868,66 +711,61 @@ void DrawAllVisuals()
       ObjectsDeleteAll(0, "SMC_LINE_");
    }
    
-   // Draw structural swings
-   if(Show_Structural_Swings)
-      DrawStructuralSwings();
+   if(Show_Swing_Points)
+      DrawSwingPoints();
    
-   // Draw internal swings (optional)
-   if(Show_Internal_Swings)
-      DrawInternalSwings();
-   
-   // Draw structure lines
    if(Show_Structure_Lines)
       DrawStructureLines();
    
-   // Draw breaks (BOS/CHoCH)
    if(Show_Break_Labels)
       DrawBreaks();
 }
 
 //+------------------------------------------------------------------+
-//| Draw Structural Swings (HH, HL, LH, LL)                           |
+//| Draw Swing Points                                                 |
 //+------------------------------------------------------------------+
-void DrawStructuralSwings()
+void DrawSwingPoints()
 {
    int drawn = 0;
-   int max_draw = Show_Only_Latest ? Latest_Count : 100;
+   int max_draw = Show_Only_Latest ? Latest_Count : 50;
    
-   for(int i = 0; i < ArraySize(g_structuralSwings) && drawn < max_draw; i++)
+   for(int i = 0; i < ArraySize(g_swings) && drawn < max_draw; i++)
    {
-      StructuralSwing ss = g_structuralSwings[i];
+      SwingPoint sp = g_swings[i];
       
-      if(!ss.is_structural) continue;
+      // Only draw classified swings
+      if(sp.swing_type == SWING_HIGH || sp.swing_type == SWING_LOW)
+         continue;
       
-      color clr = Color_HH;
-      int arrow_code = 234;  // Down arrow for highs
-      ENUM_ANCHOR_POINT anchor = ANCHOR_BOTTOM;
+      string label = "";
+      color clr = clrWhite;
+      int arrow_code = 234;
       double label_offset = 50 * _Point;
       
-      switch(ss.swing_type)
+      switch(sp.swing_type)
       {
          case SWING_HH:
+            label = "HH";
             clr = Color_HH;
             arrow_code = 234;
-            anchor = ANCHOR_BOTTOM;
             label_offset = 50 * _Point;
             break;
          case SWING_HL:
+            label = "HL";
             clr = Color_HL;
             arrow_code = 233;
-            anchor = ANCHOR_TOP;
             label_offset = -50 * _Point;
             break;
          case SWING_LH:
+            label = "LH";
             clr = Color_LH;
             arrow_code = 234;
-            anchor = ANCHOR_BOTTOM;
             label_offset = 50 * _Point;
             break;
          case SWING_LL:
+            label = "LL";
             clr = Color_LL;
             arrow_code = 233;
-            anchor = ANCHOR_TOP;
             label_offset = -50 * _Point;
             break;
          default:
@@ -937,17 +775,16 @@ void DrawStructuralSwings()
       // Draw arrow
       string arrow_name = "SMC_SW_" + IntegerToString(drawn) + "_arr";
       ObjectDelete(0, arrow_name);
-      ObjectCreate(0, arrow_name, OBJ_ARROW, 0, ss.time, ss.price);
+      ObjectCreate(0, arrow_name, OBJ_ARROW, 0, sp.time, sp.price);
       ObjectSetInteger(0, arrow_name, OBJPROP_ARROWCODE, arrow_code);
       ObjectSetInteger(0, arrow_name, OBJPROP_COLOR, clr);
       ObjectSetInteger(0, arrow_name, OBJPROP_WIDTH, 3);
-      ObjectSetInteger(0, arrow_name, OBJPROP_ANCHOR, anchor);
       
       // Draw label
       string label_name = "SMC_SW_" + IntegerToString(drawn) + "_lbl";
       ObjectDelete(0, label_name);
-      ObjectCreate(0, label_name, OBJ_TEXT, 0, ss.time, ss.price + label_offset);
-      ObjectSetString(0, label_name, OBJPROP_TEXT, ss.label);
+      ObjectCreate(0, label_name, OBJ_TEXT, 0, sp.time, sp.price + label_offset);
+      ObjectSetString(0, label_name, OBJPROP_TEXT, label);
       ObjectSetInteger(0, label_name, OBJPROP_COLOR, clr);
       ObjectSetInteger(0, label_name, OBJPROP_FONTSIZE, 10);
       ObjectSetString(0, label_name, OBJPROP_FONT, "Arial Bold");
@@ -956,7 +793,7 @@ void DrawStructuralSwings()
       string hline_name = "SMC_SW_" + IntegerToString(drawn) + "_hline";
       datetime end_time = iTime(_Symbol, PERIOD_CURRENT, 0);
       ObjectDelete(0, hline_name);
-      ObjectCreate(0, hline_name, OBJ_TREND, 0, ss.time, ss.price, end_time, ss.price);
+      ObjectCreate(0, hline_name, OBJ_TREND, 0, sp.time, sp.price, end_time, sp.price);
       ObjectSetInteger(0, hline_name, OBJPROP_COLOR, clr);
       ObjectSetInteger(0, hline_name, OBJPROP_STYLE, STYLE_DOT);
       ObjectSetInteger(0, hline_name, OBJPROP_WIDTH, 1);
@@ -968,75 +805,36 @@ void DrawStructuralSwings()
 }
 
 //+------------------------------------------------------------------+
-//| Draw Internal Swings (optional)                                   |
-//+------------------------------------------------------------------+
-void DrawInternalSwings()
-{
-   int drawn = 0;
-   int max_draw = Show_Only_Latest ? Latest_Count : 50;
-   
-   for(int i = 0; i < ArraySize(g_structuralSwings) && drawn < max_draw; i++)
-   {
-      StructuralSwing ss = g_structuralSwings[i];
-      
-      if(ss.is_structural) continue;  // Skip structural ones
-      
-      int arrow_code = ss.is_high ? 234 : 233;
-      double label_offset = ss.is_high ? 30 * _Point : -30 * _Point;
-      
-      // Draw small arrow
-      string arrow_name = "SMC_SW_INT_" + IntegerToString(drawn) + "_arr";
-      ObjectDelete(0, arrow_name);
-      ObjectCreate(0, arrow_name, OBJ_ARROW, 0, ss.time, ss.price);
-      ObjectSetInteger(0, arrow_name, OBJPROP_ARROWCODE, arrow_code);
-      ObjectSetInteger(0, arrow_name, OBJPROP_COLOR, Color_Internal);
-      ObjectSetInteger(0, arrow_name, OBJPROP_WIDTH, 1);
-      
-      // Draw small label
-      string label_name = "SMC_SW_INT_" + IntegerToString(drawn) + "_lbl";
-      ObjectDelete(0, label_name);
-      ObjectCreate(0, label_name, OBJ_TEXT, 0, ss.time, ss.price + label_offset);
-      ObjectSetString(0, label_name, OBJPROP_TEXT, ss.label);
-      ObjectSetInteger(0, label_name, OBJPROP_COLOR, Color_Internal);
-      ObjectSetInteger(0, label_name, OBJPROP_FONTSIZE, 8);
-      
-      drawn++;
-   }
-}
-
-//+------------------------------------------------------------------+
 //| Draw Structure Lines                                              |
 //+------------------------------------------------------------------+
 void DrawStructureLines()
 {
    int line_count = 0;
-   int max_lines = Show_Only_Latest ? Latest_Count * 2 : 50;
+   int max_lines = Show_Only_Latest ? Latest_Count * 2 : 30;
    
-   StructuralSwing prev;
+   SwingPoint prev;
    bool have_prev = false;
    
-   // Draw lines connecting structural swings only
-   for(int i = ArraySize(g_structuralSwings) - 1; i >= 0 && line_count < max_lines; i--)
+   for(int i = ArraySize(g_swings) - 1; i >= 0 && line_count < max_lines; i--)
    {
-      StructuralSwing ss = g_structuralSwings[i];
+      SwingPoint sp = g_swings[i];
       
-      if(!ss.is_structural) continue;
+      // Only connect classified swings
+      if(sp.swing_type == SWING_HIGH || sp.swing_type == SWING_LOW)
+         continue;
       
-      if(have_prev && prev.is_high != ss.is_high)
+      if(have_prev && prev.is_high != sp.is_high)
       {
-         // Connect high to low or low to high
          string line_name = "SMC_LINE_" + IntegerToString(line_count);
          
          color line_color = Color_HH;
-         if(prev.is_high && !ss.is_high)
-            line_color = Color_LH;  // High to Low = bearish move
+         if(prev.is_high && !sp.is_high)
+            line_color = Color_LH;  // Down move
          else
-            line_color = Color_HL;  // Low to High = bullish move
+            line_color = Color_HL;  // Up move
          
          ObjectDelete(0, line_name);
-         ObjectCreate(0, line_name, OBJ_TREND, 0, 
-                      prev.time, prev.price,
-                      ss.time, ss.price);
+         ObjectCreate(0, line_name, OBJ_TREND, 0, prev.time, prev.price, sp.time, sp.price);
          ObjectSetInteger(0, line_name, OBJPROP_COLOR, line_color);
          ObjectSetInteger(0, line_name, OBJPROP_WIDTH, 2);
          ObjectSetInteger(0, line_name, OBJPROP_STYLE, STYLE_SOLID);
@@ -1046,7 +844,7 @@ void DrawStructureLines()
          line_count++;
       }
       
-      prev = ss;
+      prev = sp;
       have_prev = true;
    }
 }
@@ -1057,55 +855,55 @@ void DrawStructureLines()
 void DrawBreaks()
 {
    int drawn = 0;
-   int max_draw = Show_Only_Latest ? Latest_Count : 50;
+   int max_draw = Show_Only_Latest ? Latest_Count : 30;
    
    for(int i = 0; i < ArraySize(g_breaks) && drawn < max_draw; i++)
    {
       StructureBreak brk = g_breaks[i];
       
-      string label_text = "";
-      color label_color = clrWhite;
+      string label = "";
+      color clr = clrWhite;
       
       switch(brk.type)
       {
          case BREAK_BOS_BULL:
-            label_text = "BOS ▲";
-            label_color = Color_BOS_Bull;
+            label = "BOS";
+            clr = Color_BOS_Bull;
             break;
          case BREAK_BOS_BEAR:
-            label_text = "BOS ▼";
-            label_color = Color_BOS_Bear;
+            label = "BOS";
+            clr = Color_BOS_Bear;
             break;
          case BREAK_CHOCH_BULL:
-            label_text = "★ CHoCH ▲";
-            label_color = Color_CHoCH_Bull;
+            label = "CHoCH";
+            clr = Color_CHoCH_Bull;
             break;
          case BREAK_CHOCH_BEAR:
-            label_text = "★ CHoCH ▼";
-            label_color = Color_CHoCH_Bear;
+            label = "CHoCH";
+            clr = Color_CHoCH_Bear;
             break;
          default:
             continue;
       }
       
-      // Draw break level line
+      // Draw break line (from the level that was broken)
       string line_name = "SMC_BRK_" + IntegerToString(drawn) + "_line";
       datetime end_time = iTime(_Symbol, PERIOD_CURRENT, 0);
       
       ObjectDelete(0, line_name);
-      ObjectCreate(0, line_name, OBJ_TREND, 0, brk.break_time, brk.break_level, end_time, brk.break_level);
-      ObjectSetInteger(0, line_name, OBJPROP_COLOR, label_color);
+      ObjectCreate(0, line_name, OBJ_TREND, 0, brk.level_time, brk.break_level, end_time, brk.break_level);
+      ObjectSetInteger(0, line_name, OBJPROP_COLOR, clr);
       ObjectSetInteger(0, line_name, OBJPROP_STYLE, STYLE_DASH);
       ObjectSetInteger(0, line_name, OBJPROP_WIDTH, 2);
       ObjectSetInteger(0, line_name, OBJPROP_RAY_RIGHT, false);
       ObjectSetInteger(0, line_name, OBJPROP_BACK, true);
       
-      // Draw label
+      // Draw label at break point
       string text_name = "SMC_BRK_" + IntegerToString(drawn) + "_txt";
       ObjectDelete(0, text_name);
       ObjectCreate(0, text_name, OBJ_TEXT, 0, brk.break_time, brk.break_level);
-      ObjectSetString(0, text_name, OBJPROP_TEXT, label_text);
-      ObjectSetInteger(0, text_name, OBJPROP_COLOR, label_color);
+      ObjectSetString(0, text_name, OBJPROP_TEXT, label);
+      ObjectSetInteger(0, text_name, OBJPROP_COLOR, clr);
       ObjectSetInteger(0, text_name, OBJPROP_FONTSIZE, 12);
       ObjectSetString(0, text_name, OBJPROP_FONT, "Arial Bold");
       ObjectSetInteger(0, text_name, OBJPROP_ANCHOR, ANCHOR_LEFT);
@@ -1117,7 +915,7 @@ void DrawBreaks()
       ObjectDelete(0, arrow_name);
       ObjectCreate(0, arrow_name, OBJ_ARROW, 0, brk.break_time, brk.break_price);
       ObjectSetInteger(0, arrow_name, OBJPROP_ARROWCODE, arrow_code);
-      ObjectSetInteger(0, arrow_name, OBJPROP_COLOR, label_color);
+      ObjectSetInteger(0, arrow_name, OBJPROP_COLOR, clr);
       ObjectSetInteger(0, arrow_name, OBJPROP_WIDTH, 3);
       
       drawn++;
@@ -1129,54 +927,44 @@ void DrawBreaks()
 //+------------------------------------------------------------------+
 void DrawInfoPanel()
 {
-   string panel_name = "SMC_Panel";
+   string p = "SMC_Panel";
    
-   // Background
-   ObjectCreate(0, panel_name + "_BG", OBJ_RECTANGLE_LABEL, 0, 0, 0);
-   ObjectSetInteger(0, panel_name + "_BG", OBJPROP_XDISTANCE, 10);
-   ObjectSetInteger(0, panel_name + "_BG", OBJPROP_YDISTANCE, 25);
-   ObjectSetInteger(0, panel_name + "_BG", OBJPROP_XSIZE, 300);
-   ObjectSetInteger(0, panel_name + "_BG", OBJPROP_YSIZE, 180);
-   ObjectSetInteger(0, panel_name + "_BG", OBJPROP_BGCOLOR, C'20,20,30');
-   ObjectSetInteger(0, panel_name + "_BG", OBJPROP_BORDER_TYPE, BORDER_FLAT);
-   ObjectSetInteger(0, panel_name + "_BG", OBJPROP_CORNER, CORNER_LEFT_UPPER);
-   ObjectSetInteger(0, panel_name + "_BG", OBJPROP_COLOR, clrGold);
-   ObjectSetInteger(0, panel_name + "_BG", OBJPROP_WIDTH, 2);
+   ObjectCreate(0, p + "_BG", OBJ_RECTANGLE_LABEL, 0, 0, 0);
+   ObjectSetInteger(0, p + "_BG", OBJPROP_XDISTANCE, 10);
+   ObjectSetInteger(0, p + "_BG", OBJPROP_YDISTANCE, 25);
+   ObjectSetInteger(0, p + "_BG", OBJPROP_XSIZE, 280);
+   ObjectSetInteger(0, p + "_BG", OBJPROP_YSIZE, 150);
+   ObjectSetInteger(0, p + "_BG", OBJPROP_BGCOLOR, C'20,20,30');
+   ObjectSetInteger(0, p + "_BG", OBJPROP_BORDER_TYPE, BORDER_FLAT);
+   ObjectSetInteger(0, p + "_BG", OBJPROP_CORNER, CORNER_LEFT_UPPER);
+   ObjectSetInteger(0, p + "_BG", OBJPROP_COLOR, clrGold);
+   ObjectSetInteger(0, p + "_BG", OBJPROP_WIDTH, 2);
    
-   // Title
-   CreateLabel(panel_name + "_Title", "═══ SMC STRATEGY v3.0 ═══", 20, 30, clrGold, 11);
-   
-   // Trend State
-   CreateLabel(panel_name + "_TrendLbl", "Trend State:", 20, 55, clrWhite, 10);
-   CreateLabel(panel_name + "_TrendVal", "---", 140, 55, clrYellow, 10);
-   
-   // Last Structural High
-   CreateLabel(panel_name + "_HighLbl", "Last Struct High:", 20, 80, clrWhite, 10);
-   CreateLabel(panel_name + "_HighVal", "---", 140, 80, Color_HH, 10);
-   
-   // Last Structural Low
-   CreateLabel(panel_name + "_LowLbl", "Last Struct Low:", 20, 105, clrWhite, 10);
-   CreateLabel(panel_name + "_LowVal", "---", 140, 105, Color_HL, 10);
-   
-   // Last Break
-   CreateLabel(panel_name + "_BreakLbl", "Last Break:", 20, 130, clrWhite, 10);
-   CreateLabel(panel_name + "_BreakVal", "---", 140, 130, clrYellow, 10);
-   
-   // Counts
-   CreateLabel(panel_name + "_CountLbl", "Struct/Breaks:", 20, 155, clrWhite, 10);
-   CreateLabel(panel_name + "_CountVal", "---", 140, 155, clrCyan, 10);
+   CreateLabel(p + "_Title", "═══ SMC v4.0 ═══", 20, 30, clrGold, 11);
+   CreateLabel(p + "_TrendLbl", "Trend:", 20, 55, clrWhite, 10);
+   CreateLabel(p + "_TrendVal", "---", 100, 55, clrYellow, 10);
+   CreateLabel(p + "_HHLbl", "Last HH:", 20, 80, clrWhite, 9);
+   CreateLabel(p + "_HHVal", "---", 100, 80, Color_HH, 9);
+   CreateLabel(p + "_HLLbl", "Last HL:", 150, 80, clrWhite, 9);
+   CreateLabel(p + "_HLVal", "---", 210, 80, Color_HL, 9);
+   CreateLabel(p + "_LHLbl", "Last LH:", 20, 100, clrWhite, 9);
+   CreateLabel(p + "_LHVal", "---", 100, 100, Color_LH, 9);
+   CreateLabel(p + "_LLLbl", "Last LL:", 150, 100, clrWhite, 9);
+   CreateLabel(p + "_LLVal", "---", 210, 100, Color_LL, 9);
+   CreateLabel(p + "_BreakLbl", "Last Break:", 20, 125, clrWhite, 10);
+   CreateLabel(p + "_BreakVal", "---", 120, 125, clrYellow, 10);
 }
 
 //+------------------------------------------------------------------+
-//| Create Label Helper                                               |
+//| Create Label                                                      |
 //+------------------------------------------------------------------+
-void CreateLabel(string name, string text, int x, int y, color clr, int font_size)
+void CreateLabel(string name, string text, int x, int y, color clr, int size)
 {
    ObjectCreate(0, name, OBJ_LABEL, 0, 0, 0);
    ObjectSetInteger(0, name, OBJPROP_XDISTANCE, x);
    ObjectSetInteger(0, name, OBJPROP_YDISTANCE, y);
    ObjectSetInteger(0, name, OBJPROP_COLOR, clr);
-   ObjectSetInteger(0, name, OBJPROP_FONTSIZE, font_size);
+   ObjectSetInteger(0, name, OBJPROP_FONTSIZE, size);
    ObjectSetString(0, name, OBJPROP_TEXT, text);
    ObjectSetString(0, name, OBJPROP_FONT, "Consolas");
    ObjectSetInteger(0, name, OBJPROP_CORNER, CORNER_LEFT_UPPER);
@@ -1187,74 +975,49 @@ void CreateLabel(string name, string text, int x, int y, color clr, int font_siz
 //+------------------------------------------------------------------+
 void UpdateInfoPanel()
 {
-   string panel_name = "SMC_Panel";
+   string p = "SMC_Panel";
    
-   // Update Trend State
+   // Trend
    string trend_str = "NEUTRAL";
-   color trend_color = clrYellow;
+   color trend_clr = clrYellow;
+   if(g_trendState == TREND_BULLISH) { trend_str = "BULLISH"; trend_clr = clrLime; }
+   else if(g_trendState == TREND_BEARISH) { trend_str = "BEARISH"; trend_clr = clrRed; }
+   ObjectSetString(0, p + "_TrendVal", OBJPROP_TEXT, trend_str);
+   ObjectSetInteger(0, p + "_TrendVal", OBJPROP_COLOR, trend_clr);
    
-   if(g_trendState == TREND_BULLISH)
-   {
-      trend_str = "▲ BULLISH";
-      trend_color = clrLime;
-   }
-   else if(g_trendState == TREND_BEARISH)
-   {
-      trend_str = "▼ BEARISH";
-      trend_color = clrRed;
-   }
+   // HH
+   if(g_lastHH > 0)
+      ObjectSetString(0, p + "_HHVal", OBJPROP_TEXT, DoubleToString(g_lastHH, _Digits));
    
-   ObjectSetString(0, panel_name + "_TrendVal", OBJPROP_TEXT, trend_str);
-   ObjectSetInteger(0, panel_name + "_TrendVal", OBJPROP_COLOR, trend_color);
+   // HL
+   if(g_lastHL > 0)
+      ObjectSetString(0, p + "_HLVal", OBJPROP_TEXT, DoubleToString(g_lastHL, _Digits));
    
-   // Update Last Structural High
-   if(g_lastStructuralHigh > 0)
-   {
-      string high_text = DoubleToString(g_lastStructuralHigh, _Digits);
-      ObjectSetString(0, panel_name + "_HighVal", OBJPROP_TEXT, high_text);
-   }
+   // LH
+   if(g_lastLH > 0)
+      ObjectSetString(0, p + "_LHVal", OBJPROP_TEXT, DoubleToString(g_lastLH, _Digits));
    
-   // Update Last Structural Low
-   if(g_lastStructuralLow > 0)
-   {
-      string low_text = DoubleToString(g_lastStructuralLow, _Digits);
-      ObjectSetString(0, panel_name + "_LowVal", OBJPROP_TEXT, low_text);
-   }
+   // LL
+   if(g_lastLL > 0)
+      ObjectSetString(0, p + "_LLVal", OBJPROP_TEXT, DoubleToString(g_lastLL, _Digits));
    
-   // Update Last Break
-   string break_str = "None";
-   color break_color = clrGray;
-   
+   // Last Break
    if(ArraySize(g_breaks) > 0)
    {
-      StructureBreak last_brk = g_breaks[0];
-      switch(last_brk.type)
+      StructureBreak brk = g_breaks[0];
+      string brk_str = "";
+      color brk_clr = clrWhite;
+      
+      switch(brk.type)
       {
-         case BREAK_BOS_BULL:
-            break_str = "BOS ▲";
-            break_color = Color_BOS_Bull;
-            break;
-         case BREAK_BOS_BEAR:
-            break_str = "BOS ▼";
-            break_color = Color_BOS_Bear;
-            break;
-         case BREAK_CHOCH_BULL:
-            break_str = "★ CHoCH ▲";
-            break_color = Color_CHoCH_Bull;
-            break;
-         case BREAK_CHOCH_BEAR:
-            break_str = "★ CHoCH ▼";
-            break_color = Color_CHoCH_Bear;
-            break;
+         case BREAK_BOS_BULL: brk_str = "BOS Bull"; brk_clr = Color_BOS_Bull; break;
+         case BREAK_BOS_BEAR: brk_str = "BOS Bear"; brk_clr = Color_BOS_Bear; break;
+         case BREAK_CHOCH_BULL: brk_str = "CHoCH Bull"; brk_clr = Color_CHoCH_Bull; break;
+         case BREAK_CHOCH_BEAR: brk_str = "CHoCH Bear"; brk_clr = Color_CHoCH_Bear; break;
       }
+      
+      ObjectSetString(0, p + "_BreakVal", OBJPROP_TEXT, brk_str);
+      ObjectSetInteger(0, p + "_BreakVal", OBJPROP_COLOR, brk_clr);
    }
-   
-   ObjectSetString(0, panel_name + "_BreakVal", OBJPROP_TEXT, break_str);
-   ObjectSetInteger(0, panel_name + "_BreakVal", OBJPROP_COLOR, break_color);
-   
-   // Update Counts
-   string count_str = IntegerToString(CountStructuralSwings()) + " / " + 
-                      IntegerToString(ArraySize(g_breaks));
-   ObjectSetString(0, panel_name + "_CountVal", OBJPROP_TEXT, count_str);
 }
 //+------------------------------------------------------------------+
