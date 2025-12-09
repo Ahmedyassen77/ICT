@@ -15,18 +15,19 @@ input int    SwingStrength = 5;           // Swing Strength (bars left/right)
 input int    MaxSwings = 50;              // Maximum Swings to Track
 
 input group "=== Display Settings ==="
-input bool   ShowSwingPoints = true;     // Show Swing Points (HH/HL/LH/LL)
+input bool   ShowSwingPoints = false;    // Show Swing Points (HH/HL/LH/LL)
 input bool   ShowBOS = true;              // Show Break of Structure
 input bool   ShowCHoCH = true;            // Show Change of Character
-input bool   ShowOrderBlocks = true;      // Show Order Blocks
+input bool   ShowOrderBlocks = false;     // Show Order Blocks
+input int    ExtendLinesBars = 50;        // Extend Lines (bars)
 
 input group "=== Colors ==="
 input color  ColorHH = clrDodgerBlue;     // Higher High Color
 input color  ColorHL = clrLime;           // Higher Low Color
 input color  ColorLH = clrOrange;         // Lower High Color
 input color  ColorLL = clrRed;            // Lower Low Color
-input color  ColorBOS = clrYellow;        // BOS Line Color
-input color  ColorCHoCH = clrMagenta;     // CHoCH Line Color
+input color  ColorBOS = clrWhite;         // BOS Line Color
+input color  ColorCHoCH = clrRed;         // CHoCH Line Color
 input color  ColorBullishOB = C'0,100,255'; // Bullish OB Color
 input color  ColorBearishOB = C'255,0,100'; // Bearish OB Color
 
@@ -249,85 +250,107 @@ void DetectBreaks(const datetime &time[], const double &high[], const double &lo
 {
    g_break_count = 0;
    
-   // Determine current trend based on recent swings
-   bool is_uptrend = false;
-   bool is_downtrend = false;
+   if(g_swing_count < 3) return;
    
-   // Look at last 5 classified swings
-   int hh_count = 0, hl_count = 0, lh_count = 0, ll_count = 0;
-   
-   for(int i = 0; i < MathMin(5, g_swing_count); i++)
+   // Track breaks directly from swing sequence
+   for(int i = 0; i < g_swing_count - 1; i++)
    {
-      switch(g_swings[i].type)
+      SwingPoint current = g_swings[i];
+      
+      // Find next swing of same type
+      SwingPoint next_same;
+      bool found_next = false;
+      
+      for(int j = i + 1; j < g_swing_count; j++)
       {
-         case SWING_HH: hh_count++; break;
-         case SWING_HL: hl_count++; break;
-         case SWING_LH: lh_count++; break;
-         case SWING_LL: ll_count++; break;
-      }
-   }
-   
-   if(hh_count + hl_count > lh_count + ll_count)
-      is_uptrend = true;
-   else if(lh_count + ll_count > hh_count + hl_count)
-      is_downtrend = true;
-   
-   // Find last significant swing points
-   double last_hh = 0, last_hl = 0, last_lh = 0, last_ll = 0;
-   
-   for(int i = 0; i < g_swing_count; i++)
-   {
-      if(g_swings[i].type == SWING_HH && last_hh == 0) last_hh = g_swings[i].price;
-      if(g_swings[i].type == SWING_HL && last_hl == 0) last_hl = g_swings[i].price;
-      if(g_swings[i].type == SWING_LH && last_lh == 0) last_lh = g_swings[i].price;
-      if(g_swings[i].type == SWING_LL && last_ll == 0) last_ll = g_swings[i].price;
-   }
-   
-   // Check recent price action for breaks
-   for(int i = 1; i < MathMin(100, total); i++)
-   {
-      // BOS Bullish: In uptrend, break above last HH
-      if(is_uptrend && last_hh > 0 && close[i] > last_hh && close[i+1] <= last_hh)
-      {
-         g_breaks[g_break_count].time = time[i];
-         g_breaks[g_break_count].price = last_hh;
-         g_breaks[g_break_count].bar_index = i;
-         g_breaks[g_break_count].is_bos = true;
-         g_breaks[g_break_count].is_bullish = true;
-         g_break_count++;
+         if(g_swings[j].is_high == current.is_high)
+         {
+            next_same = g_swings[j];
+            found_next = true;
+            break;
+         }
       }
       
-      // BOS Bearish: In downtrend, break below last LL
-      if(is_downtrend && last_ll > 0 && close[i] < last_ll && close[i+1] >= last_ll)
+      if(!found_next) continue;
+      
+      // Find previous swing of opposite type between current and next
+      SwingPoint between_opposite;
+      bool found_between = false;
+      
+      for(int k = i + 1; k < g_swing_count; k++)
       {
-         g_breaks[g_break_count].time = time[i];
-         g_breaks[g_break_count].price = last_ll;
-         g_breaks[g_break_count].bar_index = i;
-         g_breaks[g_break_count].is_bos = true;
-         g_breaks[g_break_count].is_bullish = false;
-         g_break_count++;
+         if(g_swings[k].is_high != current.is_high && 
+            g_swings[k].bar_index > current.bar_index && 
+            g_swings[k].bar_index < next_same.bar_index)
+         {
+            between_opposite = g_swings[k];
+            found_between = true;
+            break;
+         }
       }
       
-      // CHoCH Bullish: In downtrend, break above last LH
-      if(is_downtrend && last_lh > 0 && close[i] > last_lh && close[i+1] <= last_lh)
-      {
-         g_breaks[g_break_count].time = time[i];
-         g_breaks[g_break_count].price = last_lh;
-         g_breaks[g_break_count].bar_index = i;
-         g_breaks[g_break_count].is_bos = false;
-         g_breaks[g_break_count].is_bullish = true;
-         g_break_count++;
-      }
+      if(!found_between) continue;
       
-      // CHoCH Bearish: In uptrend, break below last HL
-      if(is_uptrend && last_hl > 0 && close[i] < last_hl && close[i+1] >= last_hl)
+      // Detect BOS and CHoCH based on swing patterns
+      if(current.is_high)
       {
-         g_breaks[g_break_count].time = time[i];
-         g_breaks[g_break_count].price = last_hl;
-         g_breaks[g_break_count].bar_index = i;
-         g_breaks[g_break_count].is_bos = false;
-         g_breaks[g_break_count].is_bullish = false;
-         g_break_count++;
+         // Working with highs
+         if(next_same.price > current.price)
+         {
+            // HH formed - BOS if we broke previous high
+            if(g_break_count < 100)
+            {
+               g_breaks[g_break_count].time = next_same.time;
+               g_breaks[g_break_count].price = current.price;
+               g_breaks[g_break_count].bar_index = next_same.bar_index;
+               g_breaks[g_break_count].is_bos = true;
+               g_breaks[g_break_count].is_bullish = true;
+               g_break_count++;
+            }
+         }
+         else if(next_same.price < current.price)
+         {
+            // LH formed - CHoCH (potential reversal)
+            if(g_break_count < 100)
+            {
+               g_breaks[g_break_count].time = between_opposite.time;
+               g_breaks[g_break_count].price = between_opposite.price;
+               g_breaks[g_break_count].bar_index = between_opposite.bar_index;
+               g_breaks[g_break_count].is_bos = false;
+               g_breaks[g_break_count].is_bullish = false;
+               g_break_count++;
+            }
+         }
+      }
+      else
+      {
+         // Working with lows
+         if(next_same.price < current.price)
+         {
+            // LL formed - BOS if we broke previous low
+            if(g_break_count < 100)
+            {
+               g_breaks[g_break_count].time = next_same.time;
+               g_breaks[g_break_count].price = current.price;
+               g_breaks[g_break_count].bar_index = next_same.bar_index;
+               g_breaks[g_break_count].is_bos = true;
+               g_breaks[g_break_count].is_bullish = false;
+               g_break_count++;
+            }
+         }
+         else if(next_same.price > current.price)
+         {
+            // HL formed - CHoCH (potential reversal)
+            if(g_break_count < 100)
+            {
+               g_breaks[g_break_count].time = between_opposite.time;
+               g_breaks[g_break_count].price = between_opposite.price;
+               g_breaks[g_break_count].bar_index = between_opposite.bar_index;
+               g_breaks[g_break_count].is_bos = false;
+               g_breaks[g_break_count].is_bullish = true;
+               g_break_count++;
+            }
+         }
       }
    }
 }
@@ -423,13 +446,14 @@ void DrawAll()
          color clr = g_breaks[i].is_bos ? ColorBOS : ColorCHoCH;
          
          string obj_name = "Break_" + IntegerToString(i);
-         datetime time2 = g_breaks[i].time - PeriodSeconds() * 10;
+         datetime time_start = g_breaks[i].time - PeriodSeconds() * ExtendLinesBars;
+         datetime time_end = g_breaks[i].time + PeriodSeconds() * ExtendLinesBars;
          
-         ObjectCreate(0, obj_name, OBJ_TREND, 0, time2, g_breaks[i].price, 
-                      g_breaks[i].time + PeriodSeconds() * 10, g_breaks[i].price);
+         ObjectCreate(0, obj_name, OBJ_TREND, 0, time_start, g_breaks[i].price, 
+                      time_end, g_breaks[i].price);
          ObjectSetInteger(0, obj_name, OBJPROP_COLOR, clr);
-         ObjectSetInteger(0, obj_name, OBJPROP_WIDTH, g_breaks[i].is_bos ? 1 : 2);
-         ObjectSetInteger(0, obj_name, OBJPROP_STYLE, g_breaks[i].is_bos ? STYLE_DASH : STYLE_SOLID);
+         ObjectSetInteger(0, obj_name, OBJPROP_WIDTH, 1);
+         ObjectSetInteger(0, obj_name, OBJPROP_STYLE, STYLE_DOT);
          ObjectSetInteger(0, obj_name, OBJPROP_RAY_RIGHT, false);
          
          // Add text label
