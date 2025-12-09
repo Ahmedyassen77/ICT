@@ -6,8 +6,12 @@
 #property copyright "Ahmed Yassen - SMC Ultimate EA v3"
 #property link      "https://github.com/Ahmedyassen77/ICT"
 #property version   "3.00"
-#property description "Loads Smart Money Concepts indicator with FULL parameter control"
-#property description "Changes to EA inputs will reload the indicator automatically!"
+#property description "Smart Money Concepts Auto Trader with Full Parameter Control"
+#property description "HOW TO USE:"
+#property description "1. Add 'Smart Money Concepts.ex5' indicator to chart FIRST"
+#property description "2. Configure indicator with same parameters as EA inputs"
+#property description "3. Attach this EA - it will monitor and trade automatically"
+#property description "4. EA inputs match indicator inputs for easy configuration"
 
 #include <Trade\Trade.mqh>
 
@@ -135,10 +139,12 @@ int OnInit()
    trade.SetExpertMagicNumber(MagicNumber);
    trade.SetDeviationInPoints(30);
    
-   // Remove existing indicator and add with new parameters
-   RemoveIndicator();
-   Sleep(500);
-   AddIndicator();
+   Print("═══════════════════════════════════════════════════════════");
+   Print("INSTRUCTIONS:");
+   Print("1. Please add 'Smart Money Concepts' indicator to the chart");
+   Print("2. Configure the indicator with the same parameters as EA inputs");
+   Print("3. The EA will automatically detect and trade based on signals");
+   Print("═══════════════════════════════════════════════════════════");
    
    // Initial scan
    ScanObjects();
@@ -151,231 +157,17 @@ int OnInit()
    return(INIT_SUCCEEDED);
 }
 
-//+------------------------------------------------------------------+
-//| Remove existing SMC indicator from chart                          |
-//+------------------------------------------------------------------+
-void RemoveIndicator()
-{
-   int total = ChartIndicatorsTotal(0, 0);
-   
-   for(int i = total - 1; i >= 0; i--)
-   {
-      string name = ChartIndicatorName(0, 0, i);
-      
-      // Check if it's our indicator
-      if(StringFind(name, "Smart Money") >= 0 || 
-         StringFind(name, "SMC") >= 0)
-      {
-         if(ChartIndicatorDelete(0, 0, name))
-         {
-            Print("✓ Removed existing indicator: ", name);
-         }
-      }
-   }
-   
-   // Also check subwindows
-   int windowsTotal = (int)ChartGetInteger(0, CHART_WINDOWS_TOTAL);
-   for(int win = 1; win < windowsTotal; win++)
-   {
-      total = ChartIndicatorsTotal(0, win);
-      for(int i = total - 1; i >= 0; i--)
-      {
-         string name = ChartIndicatorName(0, win, i);
-         if(StringFind(name, "Smart Money") >= 0 || StringFind(name, "SMC") >= 0)
-         {
-            ChartIndicatorDelete(0, win, name);
-         }
-      }
-   }
-}
 
-//+------------------------------------------------------------------+
-//| Add SMC indicator with EA parameters                              |
-//+------------------------------------------------------------------+
-void AddIndicator()
-{
-   Print("Loading indicator with EA parameters...");
-   
-   // Create indicator handle with all parameters
-   int handle = iCustom(_Symbol, PERIOD_CURRENT, indicatorShortName,
-      // Smart Money Concepts Settings
-      Ind_Candles,              // How many candles
-      Ind_Mode,                 // Mode
-      Ind_Style,                // Style
-      Ind_ColorCandles,         // Color Candles
-      // Real Time Internal Structure
-      Ind_ShowInternalStructure,// Show Internal Structure
-      Ind_BullishStructure,     // Bullish Structure
-      Ind_BullishColor,         // Bullish Color
-      Ind_BearishStructure,     // Bearish Structure
-      Ind_BearishColor,         // Bearish Color
-      Ind_ConfluenceFilter,     // Confluence Filter
-      // Real Time Swing Structure
-      Ind_ShowSwingStructure,   // Show Swing Structure
-      Ind_SwingBullishStructure,// Bullish Structure
-      Ind_SwingBullishColor,    // Bullish Color
-      Ind_SwingBearishStructure,// Bearish Structure
-      Ind_SwingBearishColor,    // Bearish Color
-      Ind_ShowSwingsPoints,     // Show Swings Points
-      Ind_Length,               // Length
-      Ind_ShowStrongWeakHL,     // Show Strong/Weak High/Low
-      // Order Blocks
-      Ind_ShowInternalOB,       // Show Internal Order Blocks
-      Ind_InternalOB_Count,     // Internal Order Blocks
-      Ind_SwingOrderBlocks,     // Swing Order Blocks
-      Ind_SwingOB_Count,        // Swing Order Blocks Count
-      Ind_OB_Filter,            // Order Block Filter
-      Ind_InternalBullishOB,    // Internal Bullish OB
-      Ind_InternalBearishOB,    // Internal Bearish OB
-      Ind_BullishOB,            // Bullish OB
-      Ind_BearishOB,            // Bearish OB
-      // EQH/EQL
-      Ind_EqualHL,              // Equal High/Low
-      Ind_BarsConfirmation,     // Bars Confirmation
-      Ind_Threshold,            // Threshold
-      // Fair Value Gaps
-      Ind_FairValueGaps,        // Fair Value Gaps
-      Ind_AutoThreshold,        // Auto Threshold
-      Ind_FVG_Timeframe,        // Timeframe
-      Ind_BullishFVG,           // Bullish FVG
-      Ind_BearishFVG,           // Bearish FVG
-      Ind_ExtendFVG,            // Extend FVG
-      // Highs & Lows MTF
-      Ind_ShowDaily,            // Show Daily
-      Ind_StyleDaily,           // Style Daily
-      Ind_ColorDaily,           // Color Daily
-      Ind_ShowWeekly,           // Show Weekly
-      Ind_StyleWeekly,          // Style Weekly
-      Ind_ColorWeekly,          // Color Weekly
-      Ind_ShowMonthly,          // Show Monthly
-      Ind_StyleMonthly,         // Style Monthly
-      Ind_ColorMonthly,         // Color Monthly
-      // Premium & Discount Zones
-      Ind_PremiumDiscountZones, // Premium/Discount Zones
-      Ind_PremiumZone,          // Premium Zone
-      Ind_EquilibriumZone,      // Equilibrium Zone
-      Ind_DiscountZone          // Discount Zone
-   );
-   
-   if(handle != INVALID_HANDLE)
-   {
-      // Add to chart
-      if(ChartIndicatorAdd(0, 0, handle))
-      {
-         indicatorLoaded = true;
-         Print("✓ Indicator loaded and added to chart successfully!");
-         Print("✓ Parameters from EA are now active on the indicator!");
-      }
-      else
-      {
-         Print("✗ Failed to add indicator to chart. Error: ", GetLastError());
-         // Try to add manually
-         TryManualAdd();
-      }
-   }
-   else
-   {
-      Print("✗ Failed to create indicator handle. Error: ", GetLastError());
-      Print("Trying alternative method...");
-      TryManualAdd();
-   }
-}
-
-//+------------------------------------------------------------------+
-//| Try manual add using template method                              |
-//+------------------------------------------------------------------+
-void TryManualAdd()
-{
-   Print("Attempting to apply indicator via template...");
-   
-   // Create a temporary template with indicator settings
-   string templateContent = CreateIndicatorTemplate();
-   
-   if(templateContent != "")
-   {
-      // Save template
-      string templatePath = "SMC_AutoLoad.tpl";
-      int fileHandle = FileOpen(templatePath, FILE_WRITE|FILE_TXT|FILE_ANSI);
-      
-      if(fileHandle != INVALID_HANDLE)
-      {
-         FileWriteString(fileHandle, templateContent);
-         FileClose(fileHandle);
-         
-         // Apply template
-         if(ChartApplyTemplate(0, templatePath))
-         {
-            indicatorLoaded = true;
-            Print("✓ Template applied successfully!");
-         }
-         else
-         {
-            Print("✗ Failed to apply template");
-         }
-      }
-   }
-   
-   // Final fallback message
-   if(!indicatorLoaded)
-   {
-      Print("═══════════════════════════════════════════════════════");
-      Print("NOTICE: Please add 'Smart Money Concepts' indicator manually.");
-      Print("The EA will still monitor and trade based on indicator signals.");
-      Print("═══════════════════════════════════════════════════════");
-   }
-}
-
-//+------------------------------------------------------------------+
-//| Create template content with indicator                            |
-//+------------------------------------------------------------------+
-string CreateIndicatorTemplate()
-{
-   string tpl = "";
-   
-   tpl += "<chart>\n";
-   tpl += "symbol=" + _Symbol + "\n";
-   tpl += "period=" + IntegerToString(Period()) + "\n";
-   tpl += "<window>\n";
-   tpl += "height=100\n";
-   tpl += "<indicator>\n";
-   tpl += "name=Custom Indicator\n";
-   tpl += "path=Smart Money Concepts.ex5\n";
-   tpl += "<inputs>\n";
-   tpl += "How many candles to calculate in history (0=All)=" + IntegerToString(Ind_Candles) + "\n";
-   tpl += "Mode=" + Ind_Mode + "\n";
-   tpl += "Style=" + Ind_Style + "\n";
-   tpl += "Color Candles=" + (Ind_ColorCandles ? "true" : "false") + "\n";
-   tpl += "Show Internal Structure=" + (Ind_ShowInternalStructure ? "true" : "false") + "\n";
-   tpl += "Length=" + IntegerToString(Ind_Length) + "\n";
-   tpl += "Show Swings Points=" + (Ind_ShowSwingsPoints ? "true" : "false") + "\n";
-   tpl += "Show Internal Order Blocks=" + (Ind_ShowInternalOB ? "true" : "false") + "\n";
-   tpl += "Fair Value Gaps=" + (Ind_FairValueGaps ? "true" : "false") + "\n";
-   tpl += "</inputs>\n";
-   tpl += "</indicator>\n";
-   tpl += "</window>\n";
-   tpl += "</chart>\n";
-   
-   return tpl;
-}
 
 //+------------------------------------------------------------------+
 //| Expert deinitialization                                           |
 //+------------------------------------------------------------------+
 void OnDeinit(const int reason)
 {
-   // Don't remove indicator if just changing parameters
-   if(reason == REASON_PARAMETERS)
-   {
-      Print("Parameters changed - Indicator will be reloaded...");
-   }
-   else
-   {
-      // Remove indicator when EA is removed
-      RemoveIndicator();
-   }
-   
+   // Clean up panel only
    ObjectsDeleteAll(0, "SMCEA_");
    Print("SMC Ultimate EA Stopped. Total trades: ", totalTrades);
+   Print("Note: SMC indicator remains on chart (not removed by EA)");
 }
 
 //+------------------------------------------------------------------+
@@ -684,23 +476,13 @@ void UpdatePanel()
    if(TimeCurrent() - lastUpdate < 1) return;
    lastUpdate = TimeCurrent();
    
-   // Check if indicator is on chart
-   bool indOnChart = false;
-   int total = ChartIndicatorsTotal(0, 0);
-   for(int i = 0; i < total; i++)
-   {
-      string name = ChartIndicatorName(0, 0, i);
-      if(StringFind(name, "Smart Money") >= 0 || StringFind(name, "SMC") >= 0)
-      {
-         indOnChart = true;
-         break;
-      }
-   }
+   // Check if indicator is on chart by checking for SMC objects
+   bool hasSignals = (totalBOS > 0 || totalCHoCH > 0);
    
    ObjectSetString(0, "SMCEA_Ind", OBJPROP_TEXT, 
-      "Indicator: " + (indOnChart ? "● Active" : "○ Not Found"));
+      "Indicator: " + (hasSignals ? "● Detected" : "○ Add Manually"));
    ObjectSetInteger(0, "SMCEA_Ind", OBJPROP_COLOR, 
-      indOnChart ? clrLime : clrOrange);
+      hasSignals ? clrLime : clrOrange);
    
    ObjectSetString(0, "SMCEA_BOS", OBJPROP_TEXT, "BOS Signals: " + IntegerToString(totalBOS));
    ObjectSetString(0, "SMCEA_CHoCH", OBJPROP_TEXT, "CHoCH Signals: " + IntegerToString(totalCHoCH));
