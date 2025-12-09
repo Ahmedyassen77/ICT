@@ -30,21 +30,21 @@ class SMCAnalyzer:
     def connect(self):
         """الاتصال بـ MT5"""
         if not mt5.initialize():
-            print(f"❌ فشل الاتصال بـ MT5: {mt5.last_error()}")
+            print(f"[ERROR] فشل الاتصال بـ MT5: {mt5.last_error()}")
             return False
-        print(f"✅ متصل بـ MT5")
+        print(f"[OK] متصل بـ MT5")
         return True
     
     def get_data(self, bars=500):
         """جلب البيانات من MT5"""
         rates = mt5.copy_rates_from_pos(self.symbol, self.timeframe, 0, bars)
         if rates is None:
-            print(f"❌ فشل جلب البيانات: {mt5.last_error()}")
+            print(f"[ERROR] فشل جلب البيانات: {mt5.last_error()}")
             return False
             
         self.data = pd.DataFrame(rates)
         self.data['time'] = pd.to_datetime(self.data['time'], unit='s')
-        print(f"✅ تم جلب {len(self.data)} شمعة")
+        print(f"[OK] تم جلب {len(self.data)} شمعة")
         return True
     
     # =========================================================================
@@ -103,7 +103,7 @@ class SMCAnalyzer:
         # تصنيف الـ Swings (HH, HL, LH, LL)
         self._classify_swings()
         
-        print(f"✅ تم إيجاد {len(self.swings)} Swing Points")
+        print(f"[OK] تم إيجاد {len(self.swings)} Swing Points")
         return self.swings
     
     def _classify_swings(self):
@@ -190,7 +190,7 @@ class SMCAnalyzer:
                         })
                     break
         
-        print(f"✅ تم إيجاد {len(self.bos_list)} BOS")
+        print(f"[OK] تم إيجاد {len(self.bos_list)} BOS")
         return self.bos_list
     
     # =========================================================================
@@ -267,7 +267,7 @@ class SMCAnalyzer:
                         is_bullish = True
                         break
         
-        print(f"✅ تم إيجاد {len(self.choch_list)} CHoCH")
+        print(f"[OK] تم إيجاد {len(self.choch_list)} CHoCH")
         return self.choch_list
     
     # =========================================================================
@@ -321,7 +321,7 @@ class SMCAnalyzer:
                         })
                         break
         
-        print(f"✅ تم إيجاد {len(self.order_blocks)} Order Blocks")
+        print(f"[OK] تم إيجاد {len(self.order_blocks)} Order Blocks")
         return self.order_blocks
     
     # =========================================================================
@@ -344,7 +344,7 @@ class SMCAnalyzer:
         with open(filepath, 'w', encoding='utf-8') as f:
             json.dump(result, f, indent=2, default=str)
         
-        print(f"✅ تم حفظ النتائج في: {filepath}")
+        print(f"[OK] تم حفظ النتائج في: {filepath}")
         return filepath
     
     def _timeframe_to_string(self):
@@ -378,28 +378,28 @@ class SMCAnalyzer:
             return None
         
         # 1. Swing Points
-        print("\n📍 Finding Swing Points...")
+        print("\n Finding Swing Points...")
         self.find_swing_points(swing_strength)
         
         # 2. BOS
-        print("\n📈 Finding BOS...")
+        print("\n Finding BOS...")
         self.find_bos()
         
         # 3. CHoCH
-        print("\n🔄 Finding CHoCH...")
+        print("\n Finding CHoCH...")
         self.find_choch()
         
         # 4. Order Blocks
-        print("\n📦 Finding Order Blocks...")
+        print("\n Finding Order Blocks...")
         self.find_order_blocks()
         
         # تصدير
-        print("\n💾 Exporting results...")
+        print("\n Exporting results...")
         filepath = self.export_to_json()
         
         # ملخص
         print("\n" + "="*60)
-        print("   📊 Summary:")
+        print("    Summary:")
         print(f"   - Swing Points: {len(self.swings)}")
         print(f"   - BOS: {len(self.bos_list)}")
         print(f"   - CHoCH: {len(self.choch_list)}")
