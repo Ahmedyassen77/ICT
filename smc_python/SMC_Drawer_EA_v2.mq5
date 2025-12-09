@@ -274,8 +274,8 @@ bool CreateAndApplyTemplate()
    tpl += "</window>\r\n";
    tpl += "</chart>\r\n";
    
-   // Save template
-   int h = FileOpen(templateFile, FILE_WRITE|FILE_TXT);
+   // Save template as UTF-16 LE (MT5 native format)
+   int h = FileOpen(templateFile, FILE_WRITE|FILE_TXT|FILE_UNICODE);
    if(h == INVALID_HANDLE)
    {
       Print("❌ Cannot create template. Error: ", GetLastError());
