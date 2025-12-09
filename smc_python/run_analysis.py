@@ -17,7 +17,7 @@ import MetaTrader5 as mt5
 
 def main():
     print("="*60)
-    print("   🚀 SMC Python Analyzer")
+    print("   SMC Python Analyzer")
     print("="*60)
     
     # الإعدادات
@@ -40,8 +40,8 @@ def main():
         dest_file = os.path.join(mt5_files_path, "smc_signals.json")
         shutil.copy(local_file, dest_file)
         
-        print(f"\n✅ تم نسخ الملف إلى: {dest_file}")
-        print("\n📌 الآن افتح MT5 وشغل SMC_Drawer_EA على الشارت!")
+        print(f"\nFile copied to: {dest_file}")
+        print("\nNow open MT5 and attach SMC_Drawer_EA to the chart!")
         print("="*60)
     
     # إغلاق الاتصال
