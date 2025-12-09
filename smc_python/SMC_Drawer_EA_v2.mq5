@@ -1,12 +1,12 @@
 //+------------------------------------------------------------------+
-//|                                               SMC_Final_EA.mq5  |
+//|                                               SMC_Drawer_EA.mq5  |
 //|        Uses ChartApplyTemplate to load indicator with settings   |
 //|                            https://github.com/Ahmedyassen77/ICT |
 //+------------------------------------------------------------------+
-#property copyright "Ahmed Yassen - SMC Final EA"
+#property copyright "Ahmed Yassen - SMC Drawer EA"
 #property link      "https://github.com/Ahmedyassen77/ICT"
-#property version   "5.00"
-#property description "Loads SMC indicator using Template method - 100% Working!"
+#property version   "1.00"
+#property description "Automatically places and controls SMC Indicator"
 #property description "Change any parameter and click OK - indicator will reload!"
 
 #include <Trade\Trade.mqh>
@@ -113,7 +113,7 @@ string templateFile = "SMC_EA_AutoLoad.tpl";
 int OnInit()
 {
    Print("═══════════════════════════════════════════════════");
-   Print("       SMC Final EA v5.0 - Template Method");
+   Print("       SMC Drawer EA v1.0 - Auto Indicator Load");
    Print("═══════════════════════════════════════════════════");
    
    trade.SetExpertMagicNumber(MagicNumber);
@@ -497,7 +497,7 @@ void CreatePanel()
    ObjectSetInteger(0,"SMCEA_BG",OBJPROP_COLOR,clrDodgerBlue);
    ObjectSetInteger(0,"SMCEA_BG",OBJPROP_CORNER,CORNER_LEFT_UPPER);
    
-   CreateLbl("SMCEA_T","SMC Final EA v5",x,y,clrDodgerBlue,10);
+   CreateLbl("SMCEA_T","SMC Drawer EA",x,y,clrDodgerBlue,10);
    CreateLbl("SMCEA_I","Indicator: ...",x,y+20,clrWhite,9);
    CreateLbl("SMCEA_B","BOS: 0",x,y+40,clrYellow,9);
    CreateLbl("SMCEA_C","CHoCH: 0",x,y+60,clrMagenta,9);
