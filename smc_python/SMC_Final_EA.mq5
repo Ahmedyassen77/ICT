@@ -143,133 +143,163 @@ int OnInit()
 //+------------------------------------------------------------------+
 bool CreateAndApplyTemplate()
 {
-   // Build template content
+   string terminalPath = TerminalInfoString(TERMINAL_DATA_PATH);
+   string tplPath = terminalPath + "\\MQL5\\Files\\" + templateFile;
+   
+   // Build template content (EXACT MT5 format)
    string tpl = "";
    
-   tpl += "<chart>\n";
-   tpl += "id=0\n";
-   tpl += "symbol=" + _Symbol + "\n";
-   tpl += "period_type=0\n";
-   tpl += "period_size=" + IntegerToString(PeriodSeconds()/60) + "\n";
-   tpl += "digits=" + IntegerToString(_Digits) + "\n";
-   tpl += "scale=8\n";
-   tpl += "graph=1\n";
-   tpl += "foreground=0\n";
-   tpl += "grid=0\n";
-   tpl += "volume=0\n";
-   tpl += "ohlc=1\n";
-   tpl += "scroll=1\n";
-   tpl += "shift=1\n";
-   tpl += "autoscroll=1\n";
-   tpl += "chart_visible=1\n";
-   tpl += "fixed_position=0\n";
-   tpl += "ohlc_values=1\n";
-   tpl += "ask_visible=1\n";
-   tpl += "bid_visible=1\n";
-   tpl += "last_visible=0\n";
-   tpl += "popup_enabled=1\n";
+   tpl += "<chart>\r\n";
+   tpl += "id=133604233802703218\r\n";
+   tpl += "symbol=" + _Symbol + "\r\n";
+   tpl += "period_type=0\r\n";
+   tpl += "period_size=" + IntegerToString(PeriodSeconds()/60) + "\r\n";
+   tpl += "digits=" + IntegerToString(_Digits) + "\r\n";
+   tpl += "tick_size=0.000000\r\n";
+   tpl += "position_time=0\r\n";
+   tpl += "scale_fix=0\r\n";
+   tpl += "scale_fixed_min=0.000000\r\n";
+   tpl += "scale_fixed_max=0.000000\r\n";
+   tpl += "scale_fix11=0\r\n";
+   tpl += "scale_bar=0\r\n";
+   tpl += "scale_bar_val=1.000000\r\n";
+   tpl += "scale=8\r\n";
+   tpl += "mode=1\r\n";
+   tpl += "fore=0\r\n";
+   tpl += "grid=0\r\n";
+   tpl += "volume=0\r\n";
+   tpl += "scroll=1\r\n";
+   tpl += "shift=1\r\n";
+   tpl += "shift_size=20.856354\r\n";
+   tpl += "fixed_pos=0.000000\r\n";
+   tpl += "ticker=1\r\n";
+   tpl += "ohlc=1\r\n";
+   tpl += "ask_line=1\r\n";
+   tpl += "days=0\r\n";
+   tpl += "descriptions=0\r\n";
+   tpl += "tradelines=1\r\n";
+   tpl += "tradehistory=1\r\n";
+   tpl += "window_left=0\r\n";
+   tpl += "window_top=0\r\n";
+   tpl += "window_right=0\r\n";
+   tpl += "window_bottom=0\r\n";
+   tpl += "window_type=3\r\n";
+   tpl += "floating=0\r\n";
+   tpl += "floating_left=0\r\n";
+   tpl += "floating_top=0\r\n";
+   tpl += "floating_right=0\r\n";
+   tpl += "floating_bottom=0\r\n";
+   tpl += "floating_type=1\r\n";
+   tpl += "floating_toolbar=1\r\n";
+   tpl += "floating_tbstate=\r\n";
+   tpl += "background_color=0\r\n";
+   tpl += "foreground_color=16777215\r\n";
+   tpl += "barup_color=65280\r\n";
+   tpl += "bardown_color=255\r\n";
+   tpl += "bullcandle_color=0\r\n";
+   tpl += "bearcandle_color=16777215\r\n";
+   tpl += "chartline_color=65280\r\n";
+   tpl += "volume_color=32768\r\n";
+   tpl += "bid_color=0\r\n";
+   tpl += "ask_color=255\r\n";
+   tpl += "lastdeal_color=0\r\n";
+   tpl += "stops_color=255\r\n";
+   tpl += "windows_total=1\r\n";
    
-   // Main chart window
-   tpl += "<window>\n";
-   tpl += "height=100\n";
-   tpl += "fixed_height=0\n";
+   tpl += "\r\n";
+   tpl += "<window>\r\n";
+   tpl += "height=100.000000\r\n";
+   tpl += "objects=0\r\n";
    
-   // Add SMC Indicator with all parameters
-   tpl += "<indicator>\n";
-   tpl += "name=Custom Indicator\n";
-   tpl += "path=Indicators\\Smart Money Concepts.ex5\n";
-   tpl += "apply=0\n";
-   tpl += "show_data=1\n";
+   tpl += "\r\n";
+   tpl += "<indicator>\r\n";
+   tpl += "name=Custom Indicator\r\n";
+   tpl += "path=Indicators\\Smart Money Concepts.ex5\r\n";
+   tpl += "apply=0\r\n";
+   tpl += "show_data=1\r\n";
+   tpl += "inputs=35\r\n";
    
-   // Input parameters
-   tpl += "<inputs>\n";
-   tpl += "How many candles to calculate in history (0=All)=" + IntegerToString(Ind_Candles) + "\n";
-   tpl += "Mode=" + Ind_Mode + "\n";
-   tpl += "Style=" + Ind_Style + "\n";
-   tpl += "Color Candles=" + (Ind_ColorCandles ? "true" : "false") + "\n";
-   tpl += "Show Internal Structure=" + (Ind_ShowInternal ? "true" : "false") + "\n";
-   tpl += "Bullish Structure=" + Ind_IntBullStructure + "\n";
-   tpl += "Bullish Color=" + Ind_IntBullColor + "\n";
-   tpl += "Bearish Structure=" + Ind_IntBearStructure + "\n";
-   tpl += "Bearish Color=" + Ind_IntBearColor + "\n";
-   tpl += "Confluence Filter=" + (Ind_Confluence ? "true" : "false") + "\n";
-   tpl += "Show Swing Structure=" + (Ind_ShowSwing ? "true" : "false") + "\n";
-   tpl += "Bullish Structure=" + Ind_SwingBullStructure + "\n";
-   tpl += "Bullish Color=" + Ind_SwingBullColor + "\n";
-   tpl += "Bearish Structure=" + Ind_SwingBearStructure + "\n";
-   tpl += "Bearish Color=" + Ind_SwingBearColor + "\n";
-   tpl += "Show Swings Points=" + (Ind_ShowSwingPoints ? "true" : "false") + "\n";
-   tpl += "Length=" + IntegerToString(Ind_Length) + "\n";
-   tpl += "Show Strong/Weak High/Low=" + (Ind_StrongWeak ? "true" : "false") + "\n";
-   tpl += "Show Internal Order Blocks=" + (Ind_ShowInternalOB ? "true" : "false") + "\n";
-   tpl += "Internal Order Blocks=" + IntegerToString(Ind_InternalOBCount) + "\n";
-   tpl += "Swing Order Blocks=" + (Ind_ShowSwingOB ? "true" : "false") + "\n";
-   tpl += "Swing Order Blocks=" + IntegerToString(Ind_SwingOBCount) + "\n";
-   tpl += "Order Block Filter=" + Ind_OBFilter + "\n";
-   tpl += "Internal Bullish OB=" + Ind_IntBullOB + "\n";
-   tpl += "Internal Bearish OB=" + Ind_IntBearOB + "\n";
-   tpl += "Bullish OB=" + Ind_BullOB + "\n";
-   tpl += "Bearish OB=" + Ind_BearOB + "\n";
-   tpl += "Equal High/Low=" + (Ind_EqualHL ? "true" : "false") + "\n";
-   tpl += "Bars Confirmation=" + IntegerToString(Ind_BarsConfirm) + "\n";
-   tpl += "Threshold=" + DoubleToString(Ind_Threshold, 1) + "\n";
-   tpl += "Fair Value Gaps=" + (Ind_ShowFVG ? "true" : "false") + "\n";
-   tpl += "Auto Threshold=" + (Ind_AutoThreshold ? "true" : "false") + "\n";
-   tpl += "Timeframe=" + Ind_FVGTimeframe + "\n";
-   tpl += "Bullish FVG=" + Ind_BullFVG + "\n";
-   tpl += "Bearish FVG=" + Ind_BearFVG + "\n";
-   tpl += "Extend FVG=" + IntegerToString(Ind_ExtendFVG) + "\n";
-   tpl += "Show Daily=" + (Ind_ShowDaily ? "true" : "false") + "\n";
-   tpl += "Style Daily=" + Ind_DailyStyle + "\n";
-   tpl += "Color Daily=" + Ind_DailyColor + "\n";
-   tpl += "Show Weekly=" + (Ind_ShowWeekly ? "true" : "false") + "\n";
-   tpl += "Style Weekly=" + Ind_WeeklyStyle + "\n";
-   tpl += "Color Weekly=" + Ind_WeeklyColor + "\n";
-   tpl += "Show Monthly=" + (Ind_ShowMonthly ? "true" : "false") + "\n";
-   tpl += "Style Monthly=" + Ind_MonthlyStyle + "\n";
-   tpl += "Color Monthly=" + Ind_MonthlyColor + "\n";
-   tpl += "Premium/Discount Zones=" + (Ind_ShowPDZones ? "true" : "false") + "\n";
-   tpl += "Premium Zone=" + Ind_PremiumColor + "\n";
-   tpl += "Equilibrium Zone=" + Ind_EquilColor + "\n";
-   tpl += "Discount Zone=" + Ind_DiscountColor + "\n";
-   tpl += "</inputs>\n";
+   // ALL parameters in exact order with type specification
+   tpl += "How many candles to calculate in history (0=All)=" + IntegerToString(Ind_Candles) + "\r\n";
+   tpl += "Mode=" + Ind_Mode + "\r\n";
+   tpl += "Style=" + Ind_Style + "\r\n";
+   tpl += "Color Candles=" + (Ind_ColorCandles ? "1" : "0") + "\r\n";
+   tpl += "Show Internal Structure=" + (Ind_ShowInternal ? "1" : "0") + "\r\n";
+   tpl += "Bullish Structure=" + Ind_IntBullStructure + "\r\n";
+   tpl += "Bullish Color=" + Ind_IntBullColor + "\r\n";
+   tpl += "Bearish Structure=" + Ind_IntBearStructure + "\r\n";
+   tpl += "Bearish Color=" + Ind_IntBearColor + "\r\n";
+   tpl += "Confluence Filter=" + (Ind_Confluence ? "1" : "0") + "\r\n";
+   tpl += "Show Swing Structure=" + (Ind_ShowSwing ? "1" : "0") + "\r\n";
+   tpl += "Bullish Structure=" + Ind_SwingBullStructure + "\r\n";
+   tpl += "Bullish Color=" + Ind_SwingBullColor + "\r\n";
+   tpl += "Bearish Structure=" + Ind_SwingBearStructure + "\r\n";
+   tpl += "Bearish Color=" + Ind_SwingBearColor + "\r\n";
+   tpl += "Show Swings Points=" + (Ind_ShowSwingPoints ? "1" : "0") + "\r\n";
+   tpl += "Length=" + IntegerToString(Ind_Length) + "\r\n";
+   tpl += "Show Strong/Weak High/Low=" + (Ind_StrongWeak ? "1" : "0") + "\r\n";
+   tpl += "Show Internal Order Blocks=" + (Ind_ShowInternalOB ? "1" : "0") + "\r\n";
+   tpl += "Internal Order Blocks=" + IntegerToString(Ind_InternalOBCount) + "\r\n";
+   tpl += "Swing Order Blocks=" + (Ind_ShowSwingOB ? "1" : "0") + "\r\n";
+   tpl += "Swing Order Blocks=" + IntegerToString(Ind_SwingOBCount) + "\r\n";
+   tpl += "Order Block Filter=" + Ind_OBFilter + "\r\n";
+   tpl += "Internal Bullish OB=" + Ind_IntBullOB + "\r\n";
+   tpl += "Internal Bearish OB=" + Ind_IntBearOB + "\r\n";
+   tpl += "Bullish OB=" + Ind_BullOB + "\r\n";
+   tpl += "Bearish OB=" + Ind_BearOB + "\r\n";
+   tpl += "Equal High/Low=" + (Ind_EqualHL ? "1" : "0") + "\r\n";
+   tpl += "Bars Confirmation=" + IntegerToString(Ind_BarsConfirm) + "\r\n";
+   tpl += "Threshold=" + DoubleToString(Ind_Threshold, 1) + "\r\n";
+   tpl += "Fair Value Gaps=" + (Ind_ShowFVG ? "1" : "0") + "\r\n";
+   tpl += "Auto Threshold=" + (Ind_AutoThreshold ? "1" : "0") + "\r\n";
+   tpl += "Timeframe=" + Ind_FVGTimeframe + "\r\n";
+   tpl += "Bullish FVG=" + Ind_BullFVG + "\r\n";
+   tpl += "Bearish FVG=" + Ind_BearFVG + "\r\n";
+   tpl += "Extend FVG=" + IntegerToString(Ind_ExtendFVG) + "\r\n";
+   tpl += "Show Daily=" + (Ind_ShowDaily ? "1" : "0") + "\r\n";
+   tpl += "Style Daily=" + Ind_DailyStyle + "\r\n";
+   tpl += "Color Daily=" + Ind_DailyColor + "\r\n";
+   tpl += "Show Weekly=" + (Ind_ShowWeekly ? "1" : "0") + "\r\n";
+   tpl += "Style Weekly=" + Ind_WeeklyStyle + "\r\n";
+   tpl += "Color Weekly=" + Ind_WeeklyColor + "\r\n";
+   tpl += "Show Monthly=" + (Ind_ShowMonthly ? "1" : "0") + "\r\n";
+   tpl += "Style Monthly=" + Ind_MonthlyStyle + "\r\n";
+   tpl += "Color Monthly=" + Ind_MonthlyColor + "\r\n";
+   tpl += "Premium/Discount Zones=" + (Ind_ShowPDZones ? "1" : "0") + "\r\n";
+   tpl += "Premium Zone=" + Ind_PremiumColor + "\r\n";
+   tpl += "Equilibrium Zone=" + Ind_EquilColor + "\r\n";
+   tpl += "Discount Zone=" + Ind_DiscountColor + "\r\n";
    
-   tpl += "</indicator>\n";
-   tpl += "</window>\n";
-   tpl += "</chart>\n";
+   tpl += "</indicator>\r\n";
+   tpl += "</window>\r\n";
+   tpl += "</chart>\r\n";
    
-   // Save template file
-   int handle = FileOpen(templateFile, FILE_WRITE|FILE_TXT|FILE_ANSI|FILE_COMMON);
-   if(handle == INVALID_HANDLE)
+   // Save template
+   int h = FileOpen(templateFile, FILE_WRITE|FILE_TXT);
+   if(h == INVALID_HANDLE)
    {
-      Print("Cannot create template file. Error: ", GetLastError());
+      Print("❌ Cannot create template. Error: ", GetLastError());
       return false;
    }
    
-   FileWriteString(handle, tpl);
-   FileClose(handle);
+   FileWriteString(h, tpl);
+   FileClose(h);
    
-   Print("Template created: ", templateFile);
+   Print("✓ Template saved: ", tplPath);
+   Sleep(300);
    
-   // Apply template to chart
-   Sleep(100);
-   
-   if(ChartApplyTemplate(0, "\\Common\\" + templateFile))
+   // Apply template
+   if(ChartApplyTemplate(0, templateFile))
    {
-      Print("Template applied successfully!");
+      Print("✓✓✓ INDICATOR LOADED! ✓✓✓");
+      ChartRedraw(0);
       return true;
    }
    else
    {
-      Print("ChartApplyTemplate failed. Error: ", GetLastError());
-      
-      // Try alternative path
-      if(ChartApplyTemplate(0, templateFile))
-      {
-         Print("Template applied (alt path)!");
-         return true;
-      }
-      
+      int err = GetLastError();
+      Print("❌ Template apply failed. Error: ", err);
+      Print("ℹ️  Please apply template manually: Files/", templateFile);
       return false;
    }
 }
@@ -281,8 +311,9 @@ void OnDeinit(const int reason)
 {
    ObjectsDeleteAll(0, "SMCEA_");
    
-   // Delete template file
-   FileDelete(templateFile, FILE_COMMON);
+   // Keep template for manual use
+   // FileDelete(templateFile);
+   Print("💾 Template saved for reuse: MQL5\\Files\\", templateFile);
 }
 
 //+------------------------------------------------------------------+
