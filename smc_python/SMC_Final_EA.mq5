@@ -378,11 +378,11 @@ void ProcessObject(string name)
 bool IsBull(color c)
 {
    // Parse EA colors
-   color bullInt = StringToColor(Ind_IntBullColor);
-   color bullSwing = StringToColor(Ind_SwingBullColor);
-   color bullOB = StringToColor(Ind_BullOB);
-   color bullFVG = StringToColor(Ind_BullFVG);
-   color discount = StringToColor(Ind_DiscountColor);
+   color bullInt = RGBStringToColor(Ind_IntBullColor);
+   color bullSwing = RGBStringToColor(Ind_SwingBullColor);
+   color bullOB = RGBStringToColor(Ind_BullOB);
+   color bullFVG = RGBStringToColor(Ind_BullFVG);
+   color discount = RGBStringToColor(Ind_DiscountColor);
    
    if(c == bullInt || c == bullSwing || c == bullOB || c == bullFVG || c == discount)
       return true;
@@ -394,7 +394,10 @@ bool IsBull(color c)
    return false;
 }
 
-color StringToColor(string rgb)
+//+------------------------------------------------------------------+
+//| Convert RGB string to color                                       |
+//+------------------------------------------------------------------+
+color RGBStringToColor(string rgb)
 {
    string parts[];
    int count = StringSplit(rgb, ',', parts);
