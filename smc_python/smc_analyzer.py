@@ -201,13 +201,15 @@ class SMCAnalyzer:
         """
         إيجاد Change of Character (CHoCH)
         
-        CHoCH = أول كسر يغير اتجاه السوق
-        - في ترند صاعد: كسر آخر HL = CHoCH Bearish
-        - في ترند هابط: كسر آخر LH = CHoCH Bullish
+        CHoCH = تغيير اتجاه السوق
+        - CHoCH Bearish: في ترند صاعد، كسر آخر HL
+        - CHoCH Bullish: في ترند هابط، كسر آخر LH
         """
         self.choch_list = []
         
         closes = self.data['close'].values
+        lows = self.data['low'].values
+        highs = self.data['high'].values
         
         # تحديد الترند
         is_bullish = False
@@ -216,7 +218,7 @@ class SMCAnalyzer:
         last_hl = None  # آخر Higher Low (مهم للـ CHoCH Bearish)
         last_lh = None  # آخر Lower High (مهم للـ CHoCH Bullish)
         
-        for swing in self.swings:
+        for i, swing in enumerate(self.swings):
             # تحديث الترند بناءً على HH/LL
             if swing['label'] == 'HH':
                 is_bullish = True
@@ -232,39 +234,47 @@ class SMCAnalyzer:
                 last_lh = swing
             
             # CHoCH Bearish: في ترند صاعد، كسر آخر HL
-            if is_bullish and last_hl and swing['label'] == 'LL':
+            if is_bullish and last_hl:
                 level = last_hl['price']
                 start_bar = last_hl['bar_index']
                 
+                # ابحث عن كسر بعد الـ HL
                 for bar in range(start_bar + 1, len(closes)):
+                    # إغلاق تحت الـ HL = CHoCH Bearish
                     if closes[bar] < level:
-                        self.choch_list.append({
-                            'type': 'CHOCH_BEAR',
-                            'level': float(level),
-                            'break_bar': int(bar),
-                            'break_time': str(self.data['time'].iloc[bar]),
-                            'start_time': last_hl['time']
-                        })
-                        is_bullish = False
-                        is_bearish = True
+                        # تحقق أنه لم يتم تسجيله من قبل
+                        if not any(c['level'] == level and c['type'] == 'CHOCH_BEAR' for c in self.choch_list):
+                            self.choch_list.append({
+                                'type': 'CHOCH_BEAR',
+                                'level': float(level),
+                                'break_bar': int(bar),
+                                'break_time': str(self.data['time'].iloc[bar]),
+                                'start_time': last_hl['time']
+                            })
+                            is_bullish = False
+                            is_bearish = True
                         break
             
             # CHoCH Bullish: في ترند هابط، كسر آخر LH
-            if is_bearish and last_lh and swing['label'] == 'HH':
+            if is_bearish and last_lh:
                 level = last_lh['price']
                 start_bar = last_lh['bar_index']
                 
+                # ابحث عن كسر بعد الـ LH
                 for bar in range(start_bar + 1, len(closes)):
+                    # إغلاق فوق الـ LH = CHoCH Bullish
                     if closes[bar] > level:
-                        self.choch_list.append({
-                            'type': 'CHOCH_BULL',
-                            'level': float(level),
-                            'break_bar': int(bar),
-                            'break_time': str(self.data['time'].iloc[bar]),
-                            'start_time': last_lh['time']
-                        })
-                        is_bearish = False
-                        is_bullish = True
+                        # تحقق أنه لم يتم تسجيله من قبل
+                        if not any(c['level'] == level and c['type'] == 'CHOCH_BULL' for c in self.choch_list):
+                            self.choch_list.append({
+                                'type': 'CHOCH_BULL',
+                                'level': float(level),
+                                'break_bar': int(bar),
+                                'break_time': str(self.data['time'].iloc[bar]),
+                                'start_time': last_lh['time']
+                            })
+                            is_bearish = False
+                            is_bullish = True
                         break
         
         print(f"[OK] Found {len(self.choch_list)} CHoCH")
