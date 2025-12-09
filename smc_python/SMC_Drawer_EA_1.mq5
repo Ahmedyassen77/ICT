@@ -1,18 +1,18 @@
 //+------------------------------------------------------------------+
 //|                                             SMC_Drawer_EA_1.mq5  |
-//|        Uses ChartApplyTemplate to load indicator with settings   |
+//|              Automatically loads SMC indicator on chart           |
 //|                            https://github.com/Ahmedyassen77/ICT |
 //+------------------------------------------------------------------+
 #property copyright "Ahmed Yassen - SMC Drawer EA 1"
 #property link      "https://github.com/Ahmedyassen77/ICT"
 #property version   "1.00"
 #property description "Automatically places and controls SMC Indicator"
-#property description "Change any parameter and click OK - indicator will reload!"
+#property description "Uses iCustom() to load indicator with full parameter control"
 
 #include <Trade\Trade.mqh>
 
 //+------------------------------------------------------------------+
-//| INDICATOR SETTINGS - Will be applied to indicator via Template   |
+//| INDICATOR SETTINGS - Will be applied to indicator                |
 //+------------------------------------------------------------------+
 input group "═══════════════ INDICATOR: Smart Money Concepts ═══════════════"
 input int      Ind_Candles = 2000;                     // How many candles (0=All)
@@ -105,7 +105,8 @@ CTrade trade;
 string lastBOS = "", lastCHoCH = "";
 datetime lastTradeTime = 0;
 int objCount = 0, totalBOS = 0, totalCHoCH = 0, totalTrades = 0;
-string templateFile = "SMC_EA_AutoLoad.tpl";
+int indicatorHandle = INVALID_HANDLE;
+bool indicatorLoaded = false;
 
 //+------------------------------------------------------------------+
 //| Expert initialization                                             |
@@ -113,193 +114,113 @@ string templateFile = "SMC_EA_AutoLoad.tpl";
 int OnInit()
 {
    Print("═══════════════════════════════════════════════════");
-   Print("       SMC Drawer EA 1 - Auto Indicator Load");
+   Print("       SMC Drawer EA 1 - Direct Indicator Load");
    Print("═══════════════════════════════════════════════════");
    
    trade.SetExpertMagicNumber(MagicNumber);
    
-   // Create and apply template with indicator
-   if(CreateAndApplyTemplate())
+   // Remove old indicator if exists
+   RemoveOldIndicator();
+   
+   // Load indicator with iCustom
+   if(LoadIndicatorDirect())
    {
-      Print("✓ Indicator loaded successfully via Template!");
+      Print("✓✓✓ Indicator loaded successfully! ✓✓✓");
+      indicatorLoaded = true;
    }
    else
    {
-      Print("✗ Template method failed. Add indicator manually.");
+      Print("⚠️ Could not load indicator automatically.");
+      Print("ℹ️  Please add 'Smart Money Concepts.ex5' manually.");
+      Print("ℹ️  EA will still monitor and trade from it!");
    }
    
    ScanObjects();
    if(ShowPanel) CreatePanel();
    
    Print("═══════════════════════════════════════════════════");
-   Print("EA Ready! Change any setting and click OK to reload.");
+   Print("EA Ready! Monitoring chart objects...");
    Print("═══════════════════════════════════════════════════");
    
    return(INIT_SUCCEEDED);
 }
 
 //+------------------------------------------------------------------+
-//| Create template file with indicator and settings                  |
+//| Remove old indicator from chart                                   |
 //+------------------------------------------------------------------+
-bool CreateAndApplyTemplate()
+void RemoveOldIndicator()
 {
-   string terminalPath = TerminalInfoString(TERMINAL_DATA_PATH);
-   string tplPath = terminalPath + "\\MQL5\\Files\\" + templateFile;
-   
-   // Build template content (EXACT MT5 format)
-   string tpl = "";
-   
-   tpl += "<chart>\r\n";
-   tpl += "id=133604233802703218\r\n";
-   tpl += "symbol=" + _Symbol + "\r\n";
-   tpl += "period_type=0\r\n";
-   tpl += "period_size=" + IntegerToString(PeriodSeconds()/60) + "\r\n";
-   tpl += "digits=" + IntegerToString(_Digits) + "\r\n";
-   tpl += "tick_size=0.000000\r\n";
-   tpl += "position_time=0\r\n";
-   tpl += "scale_fix=0\r\n";
-   tpl += "scale_fixed_min=0.000000\r\n";
-   tpl += "scale_fixed_max=0.000000\r\n";
-   tpl += "scale_fix11=0\r\n";
-   tpl += "scale_bar=0\r\n";
-   tpl += "scale_bar_val=1.000000\r\n";
-   tpl += "scale=8\r\n";
-   tpl += "mode=1\r\n";
-   tpl += "fore=0\r\n";
-   tpl += "grid=0\r\n";
-   tpl += "volume=0\r\n";
-   tpl += "scroll=1\r\n";
-   tpl += "shift=1\r\n";
-   tpl += "shift_size=20.856354\r\n";
-   tpl += "fixed_pos=0.000000\r\n";
-   tpl += "ticker=1\r\n";
-   tpl += "ohlc=1\r\n";
-   tpl += "ask_line=1\r\n";
-   tpl += "days=0\r\n";
-   tpl += "descriptions=0\r\n";
-   tpl += "tradelines=1\r\n";
-   tpl += "tradehistory=1\r\n";
-   tpl += "window_left=0\r\n";
-   tpl += "window_top=0\r\n";
-   tpl += "window_right=0\r\n";
-   tpl += "window_bottom=0\r\n";
-   tpl += "window_type=3\r\n";
-   tpl += "floating=0\r\n";
-   tpl += "floating_left=0\r\n";
-   tpl += "floating_top=0\r\n";
-   tpl += "floating_right=0\r\n";
-   tpl += "floating_bottom=0\r\n";
-   tpl += "floating_type=1\r\n";
-   tpl += "floating_toolbar=1\r\n";
-   tpl += "floating_tbstate=\r\n";
-   tpl += "background_color=0\r\n";
-   tpl += "foreground_color=16777215\r\n";
-   tpl += "barup_color=65280\r\n";
-   tpl += "bardown_color=255\r\n";
-   tpl += "bullcandle_color=0\r\n";
-   tpl += "bearcandle_color=16777215\r\n";
-   tpl += "chartline_color=65280\r\n";
-   tpl += "volume_color=32768\r\n";
-   tpl += "bid_color=0\r\n";
-   tpl += "ask_color=255\r\n";
-   tpl += "lastdeal_color=0\r\n";
-   tpl += "stops_color=255\r\n";
-   tpl += "windows_total=1\r\n";
-   
-   tpl += "\r\n";
-   tpl += "<window>\r\n";
-   tpl += "height=100.000000\r\n";
-   tpl += "objects=0\r\n";
-   
-   tpl += "\r\n";
-   tpl += "<indicator>\r\n";
-   tpl += "name=Custom Indicator\r\n";
-   tpl += "path=Indicators\\Smart Money Concepts.ex5\r\n";
-   tpl += "apply=0\r\n";
-   tpl += "show_data=1\r\n";
-   tpl += "inputs=35\r\n";
-   
-   // ALL parameters in exact order with type specification
-   tpl += "How many candles to calculate in history (0=All)=" + IntegerToString(Ind_Candles) + "\r\n";
-   tpl += "Mode=" + Ind_Mode + "\r\n";
-   tpl += "Style=" + Ind_Style + "\r\n";
-   tpl += "Color Candles=" + (Ind_ColorCandles ? "1" : "0") + "\r\n";
-   tpl += "Show Internal Structure=" + (Ind_ShowInternal ? "1" : "0") + "\r\n";
-   tpl += "Bullish Structure=" + Ind_IntBullStructure + "\r\n";
-   tpl += "Bullish Color=" + Ind_IntBullColor + "\r\n";
-   tpl += "Bearish Structure=" + Ind_IntBearStructure + "\r\n";
-   tpl += "Bearish Color=" + Ind_IntBearColor + "\r\n";
-   tpl += "Confluence Filter=" + (Ind_Confluence ? "1" : "0") + "\r\n";
-   tpl += "Show Swing Structure=" + (Ind_ShowSwing ? "1" : "0") + "\r\n";
-   tpl += "Bullish Structure=" + Ind_SwingBullStructure + "\r\n";
-   tpl += "Bullish Color=" + Ind_SwingBullColor + "\r\n";
-   tpl += "Bearish Structure=" + Ind_SwingBearStructure + "\r\n";
-   tpl += "Bearish Color=" + Ind_SwingBearColor + "\r\n";
-   tpl += "Show Swings Points=" + (Ind_ShowSwingPoints ? "1" : "0") + "\r\n";
-   tpl += "Length=" + IntegerToString(Ind_Length) + "\r\n";
-   tpl += "Show Strong/Weak High/Low=" + (Ind_StrongWeak ? "1" : "0") + "\r\n";
-   tpl += "Show Internal Order Blocks=" + (Ind_ShowInternalOB ? "1" : "0") + "\r\n";
-   tpl += "Internal Order Blocks=" + IntegerToString(Ind_InternalOBCount) + "\r\n";
-   tpl += "Swing Order Blocks=" + (Ind_ShowSwingOB ? "1" : "0") + "\r\n";
-   tpl += "Swing Order Blocks=" + IntegerToString(Ind_SwingOBCount) + "\r\n";
-   tpl += "Order Block Filter=" + Ind_OBFilter + "\r\n";
-   tpl += "Internal Bullish OB=" + Ind_IntBullOB + "\r\n";
-   tpl += "Internal Bearish OB=" + Ind_IntBearOB + "\r\n";
-   tpl += "Bullish OB=" + Ind_BullOB + "\r\n";
-   tpl += "Bearish OB=" + Ind_BearOB + "\r\n";
-   tpl += "Equal High/Low=" + (Ind_EqualHL ? "1" : "0") + "\r\n";
-   tpl += "Bars Confirmation=" + IntegerToString(Ind_BarsConfirm) + "\r\n";
-   tpl += "Threshold=" + DoubleToString(Ind_Threshold, 1) + "\r\n";
-   tpl += "Fair Value Gaps=" + (Ind_ShowFVG ? "1" : "0") + "\r\n";
-   tpl += "Auto Threshold=" + (Ind_AutoThreshold ? "1" : "0") + "\r\n";
-   tpl += "Timeframe=" + Ind_FVGTimeframe + "\r\n";
-   tpl += "Bullish FVG=" + Ind_BullFVG + "\r\n";
-   tpl += "Bearish FVG=" + Ind_BearFVG + "\r\n";
-   tpl += "Extend FVG=" + IntegerToString(Ind_ExtendFVG) + "\r\n";
-   tpl += "Show Daily=" + (Ind_ShowDaily ? "1" : "0") + "\r\n";
-   tpl += "Style Daily=" + Ind_DailyStyle + "\r\n";
-   tpl += "Color Daily=" + Ind_DailyColor + "\r\n";
-   tpl += "Show Weekly=" + (Ind_ShowWeekly ? "1" : "0") + "\r\n";
-   tpl += "Style Weekly=" + Ind_WeeklyStyle + "\r\n";
-   tpl += "Color Weekly=" + Ind_WeeklyColor + "\r\n";
-   tpl += "Show Monthly=" + (Ind_ShowMonthly ? "1" : "0") + "\r\n";
-   tpl += "Style Monthly=" + Ind_MonthlyStyle + "\r\n";
-   tpl += "Color Monthly=" + Ind_MonthlyColor + "\r\n";
-   tpl += "Premium/Discount Zones=" + (Ind_ShowPDZones ? "1" : "0") + "\r\n";
-   tpl += "Premium Zone=" + Ind_PremiumColor + "\r\n";
-   tpl += "Equilibrium Zone=" + Ind_EquilColor + "\r\n";
-   tpl += "Discount Zone=" + Ind_DiscountColor + "\r\n";
-   
-   tpl += "</indicator>\r\n";
-   tpl += "</window>\r\n";
-   tpl += "</chart>\r\n";
-   
-   // Save template as UTF-16 LE (MT5 native format)
-   int h = FileOpen(templateFile, FILE_WRITE|FILE_TXT|FILE_UNICODE);
-   if(h == INVALID_HANDLE)
+   int total = ChartIndicatorsTotal(0, 0);
+   for(int i = total - 1; i >= 0; i--)
    {
-      Print("❌ Cannot create template. Error: ", GetLastError());
-      return false;
+      string name = ChartIndicatorName(0, 0, i);
+      if(StringFind(name, "Smart Money") >= 0)
+      {
+         ChartIndicatorDelete(0, 0, name);
+         Print("🗑️ Removed old indicator: ", name);
+      }
    }
+}
+
+//+------------------------------------------------------------------+
+//| Load indicator directly with iCustom                              |
+//+------------------------------------------------------------------+
+bool LoadIndicatorDirect()
+{
+   // Try to load indicator using iCustom
+   MqlParam params[];
+   ArrayResize(params, 35);
    
-   FileWriteString(h, tpl);
-   FileClose(h);
+   int idx = 0;
+   params[idx].type = TYPE_INT; params[idx++].integer_value = Ind_Candles;
+   params[idx].type = TYPE_STRING; params[idx++].string_value = Ind_Mode;
+   params[idx].type = TYPE_STRING; params[idx++].string_value = Ind_Style;
+   params[idx].type = TYPE_BOOL; params[idx++].integer_value = Ind_ColorCandles;
+   params[idx].type = TYPE_BOOL; params[idx++].integer_value = Ind_ShowInternal;
+   params[idx].type = TYPE_STRING; params[idx++].string_value = Ind_IntBullStructure;
+   params[idx].type = TYPE_STRING; params[idx++].string_value = Ind_IntBullColor;
+   params[idx].type = TYPE_STRING; params[idx++].string_value = Ind_IntBearStructure;
+   params[idx].type = TYPE_STRING; params[idx++].string_value = Ind_IntBearColor;
+   params[idx].type = TYPE_BOOL; params[idx++].integer_value = Ind_Confluence;
+   params[idx].type = TYPE_BOOL; params[idx++].integer_value = Ind_ShowSwing;
+   params[idx].type = TYPE_STRING; params[idx++].string_value = Ind_SwingBullStructure;
+   params[idx].type = TYPE_STRING; params[idx++].string_value = Ind_SwingBullColor;
+   params[idx].type = TYPE_STRING; params[idx++].string_value = Ind_SwingBearStructure;
+   params[idx].type = TYPE_STRING; params[idx++].string_value = Ind_SwingBearColor;
+   params[idx].type = TYPE_BOOL; params[idx++].integer_value = Ind_ShowSwingPoints;
+   params[idx].type = TYPE_INT; params[idx++].integer_value = Ind_Length;
+   params[idx].type = TYPE_BOOL; params[idx++].integer_value = Ind_StrongWeak;
+   params[idx].type = TYPE_BOOL; params[idx++].integer_value = Ind_ShowInternalOB;
+   params[idx].type = TYPE_INT; params[idx++].integer_value = Ind_InternalOBCount;
+   params[idx].type = TYPE_BOOL; params[idx++].integer_value = Ind_ShowSwingOB;
+   params[idx].type = TYPE_INT; params[idx++].integer_value = Ind_SwingOBCount;
+   params[idx].type = TYPE_STRING; params[idx++].string_value = Ind_OBFilter;
+   params[idx].type = TYPE_STRING; params[idx++].string_value = Ind_IntBullOB;
+   params[idx].type = TYPE_STRING; params[idx++].string_value = Ind_IntBearOB;
+   params[idx].type = TYPE_STRING; params[idx++].string_value = Ind_BullOB;
+   params[idx].type = TYPE_STRING; params[idx++].string_value = Ind_BearOB;
+   params[idx].type = TYPE_BOOL; params[idx++].integer_value = Ind_EqualHL;
+   params[idx].type = TYPE_INT; params[idx++].integer_value = Ind_BarsConfirm;
+   params[idx].type = TYPE_DOUBLE; params[idx++].double_value = Ind_Threshold;
+   params[idx].type = TYPE_BOOL; params[idx++].integer_value = Ind_ShowFVG;
+   params[idx].type = TYPE_BOOL; params[idx++].integer_value = Ind_AutoThreshold;
+   params[idx].type = TYPE_STRING; params[idx++].string_value = Ind_FVGTimeframe;
+   params[idx].type = TYPE_STRING; params[idx++].string_value = Ind_BullFVG;
+   params[idx].type = TYPE_STRING; params[idx++].string_value = Ind_BearFVG;
+   params[idx].type = TYPE_INT; params[idx++].integer_value = Ind_ExtendFVG;
    
-   Print("✓ Template saved: ", tplPath);
-   Sleep(300);
+   indicatorHandle = iCustom(_Symbol, PERIOD_CURRENT, "Indicators\\Smart Money Concepts.ex5", params);
    
-   // Apply template
-   if(ChartApplyTemplate(0, templateFile))
+   if(indicatorHandle != INVALID_HANDLE)
    {
-      Print("✓✓✓ INDICATOR LOADED! ✓✓✓");
+      Print("📊 Indicator handle created: ", indicatorHandle);
       ChartRedraw(0);
       return true;
    }
    else
    {
       int err = GetLastError();
-      Print("❌ Template apply failed. Error: ", err);
-      Print("ℹ️  Please apply template manually: Files/", templateFile);
+      Print("❌ iCustom failed. Error: ", err);
       return false;
    }
 }
@@ -311,9 +232,8 @@ void OnDeinit(const int reason)
 {
    ObjectsDeleteAll(0, "SMCEA_");
    
-   // Keep template for manual use
-   // FileDelete(templateFile);
-   Print("💾 Template saved for reuse: MQL5\\Files\\", templateFile);
+   if(indicatorHandle != INVALID_HANDLE)
+      IndicatorRelease(indicatorHandle);
 }
 
 //+------------------------------------------------------------------+
