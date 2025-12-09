@@ -174,7 +174,8 @@ void RemoveIndicator()
    }
    
    // Also check subwindows
-   for(int win = 1; win < ChartWindowsTotal(0); win++)
+   int windowsTotal = (int)ChartGetInteger(0, CHART_WINDOWS_TOTAL);
+   for(int win = 1; win < windowsTotal; win++)
    {
       total = ChartIndicatorsTotal(0, win);
       for(int i = total - 1; i >= 0; i--)
